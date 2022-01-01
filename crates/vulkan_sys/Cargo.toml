@@ -1,0 +1,28 @@
+[package]
+name = "vulkan-sys"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+vulkan-xlib = []
+vulkan-xlib_xrandr = []
+vulkan-xcb = []
+vulkan-wayland = []
+vulkan-directfb = []
+vulkan-android = []
+vulkan-win32 = []
+vulkan-vi = []
+vulkan-ios = []
+vulkan-macos = []
+vulkan-metal = []
+vulkan-fuchsia = []
+vulkan-ggp = []
+vulkan-beta = []
+vulkan-screen-qnx = []
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+bindgen = "0.59.2"

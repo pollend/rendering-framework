@@ -1,10 +1,11 @@
 [package]
-name = "vulkan-sys"
+name = "vulkan_sys"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
 [features]
+default = []
 vulkan-xlib = []
 vulkan-xlib_xrandr = []
 vulkan-xcb = []

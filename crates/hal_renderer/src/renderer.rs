@@ -1,10 +1,10 @@
 use crate::configuration::*;
 use crate::error::{HalError, HalResult};
-use crate::vulkan::*;
 use std::rc::{Rc, Weak};
+use crate::vulkan::*;
 
 pub enum RendererType {
-    Vulkan(HalVKRenderer),
+    Vulkan(VulkanRenderer),
 }
 
 pub struct Renderer {
@@ -16,13 +16,15 @@ impl Renderer {
     // Renderer::Vulkan(HalVKRenderer::new(&config)?)
     pub fn new(name: &'static str, config: &RendererConfig) -> HalResult<Rc<Renderer>> {
         match &config.render_type {
-            RendererConfigType::Vulkan(_) => Ok({
-                let imp = HalVKRenderer::new(&config)?;
-                Rc::new_cyclic(|self_weak| Renderer {
-                    imp: RendererType::Vulkan(imp),
-                    me: self_weak.clone(),
+            RendererConfigType::Vulkan(_) => {
+                Ok({
+                    let imp = VulkanRenderer::new(&config)?;
+                    Rc::new_cyclic(|self_weak| Renderer {
+                        imp: RendererType::Vulkan(imp),
+                        me: self_weak.clone()
+                    })
                 })
-            }),
+            },
             _ => Err(HalError::Unhandled),
         }
 

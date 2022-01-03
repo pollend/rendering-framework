@@ -1,11 +1,11 @@
 use crate::vulkan::*;
 
-pub enum RendererConfigType<'config> {
-    Vulkan(HalVKRenderConfiguration<'config>),
+pub enum RendererConfigType {
+    Vulkan(VulkanRenderConfiguration),
 }
 
-pub struct RendererConfig<'config> {
-    pub render_type: RendererConfigType<'config>,
+pub struct RendererConfig {
+    pub render_type: RendererConfigType,
 }
 
 pub struct ComputePipelineType {}

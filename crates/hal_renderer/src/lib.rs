@@ -6,6 +6,7 @@ pub mod configuration;
 pub mod error;
 pub mod renderer;
 pub mod vulkan;
+mod device;
 
 pub mod ffi {
     pub use vulkan_sys as vk;

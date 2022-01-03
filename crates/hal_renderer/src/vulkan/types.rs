@@ -7,7 +7,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-pub type HalVKRendererImpl = Rc<HalVKRenderer>;
+pub type HalVKRendererImpl = Rc<VulkanRenderer>;
 pub type HalVKPipelineImpl = Rc<HalVKPipeline>;
 
 pub struct HalVKQueue {}

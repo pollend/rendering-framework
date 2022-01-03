@@ -1,5 +1,9 @@
+
 pub enum HalError {
     Unhandled,
+    FailedToLoad,
+
+    UnsupportedDevice,
 
     VkError(u32)
 }

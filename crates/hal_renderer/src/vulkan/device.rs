@@ -7,11 +7,19 @@ use crate::device::GPUDetail;
 use crate::error::HalError::Unhandled;
 use crate::error::{HalError, HalResult};
 
+macro_rules! insert_single {
+    ($current:expr,$next:expr) => {
+        $next.pNext = $current.pNext;
+        $current.pNext = unsafe { mem::transmute(&mut $next) };
+    };
+}
+
 pub struct VulkanGPUDetail {
-    physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2,
-    physical_memory_properties: ffi::vk::VkPhysicalDeviceMemoryProperties,
-    physical_device_properties: ffi::vk::VkPhysicalDeviceProperties2,
-    pub common: Box<GPUDetail>,
+    pub(in crate::vulkan) physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2,
+    pub(in crate::vulkan) physical_memory_properties: ffi::vk::VkPhysicalDeviceMemoryProperties,
+    pub(in crate::vulkan) physical_device_properties: ffi::vk::VkPhysicalDeviceProperties2,
+    pub(in crate::vulkan) queue_family_properties: Vec<ffi::vk::VkQueueFamilyProperties>,
+    pub common: Option<Box<GPUDetail>>,
 }
 
 impl VulkanGPUDetail {
@@ -39,7 +47,13 @@ impl VulkanGPUDetail {
     }
 
     pub fn gpu(device: &ffi::vk::VkPhysicalDevice) -> HalResult<VulkanGPUDetail> {
-        let mut detail: VulkanGPUDetail = unsafe { MaybeUninit::zeroed().assume_init() };
+        let mut detail: VulkanGPUDetail = VulkanGPUDetail {
+            physical_device_features: unsafe { MaybeUninit::zeroed().assume_init() },
+            physical_memory_properties: unsafe { MaybeUninit::zeroed().assume_init() },
+            physical_device_properties: unsafe { MaybeUninit::zeroed().assume_init() },
+            queue_family_properties: vec![],
+            common: None,
+        };
 
         unsafe { ffi::vk::vkGetPhysicalDeviceMemoryProperties(*device, &mut detail.physical_memory_properties); }
 
@@ -50,6 +64,7 @@ impl VulkanGPUDetail {
 
         unsafe { ffi::vk::vkGetPhysicalDeviceFeatures2(*device, &mut detail.physical_device_features); }
 
+        detail.physical_device_properties.sType = ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
         let mut subgroupProperties: ffi::vk::VkPhysicalDeviceSubgroupProperties = ffi::vk::VkPhysicalDeviceSubgroupProperties {
             sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
             pNext: ptr::null_mut(),
@@ -58,10 +73,7 @@ impl VulkanGPUDetail {
             supportedOperations: 0,
             quadOperationsInAllStages: 0
         };
-        detail.physical_device_properties.sType = ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
-        subgroupProperties.pNext = detail.physical_device_properties.pNext;
-        detail.physical_device_properties.pNext = unsafe { mem::transmute(&mut subgroupProperties) };
-
+        insert_single!(detail.physical_device_properties, subgroupProperties);
         unsafe { ffi::vk::vkGetPhysicalDeviceProperties2KHR(*device, &mut detail.physical_device_properties); }
 
         Ok(detail)

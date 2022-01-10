@@ -165,6 +165,8 @@ fn init_render_api(api: &RenderAPI, config: &RendererConfig) -> HalResult<Arc<Re
     Err(UnSupportedAPI)
 }
 
+
+
 impl Renderer {
     pub fn init_renderer(config: &RendererConfig) -> HalResult<Arc<Renderer>> {
         for api in ENABLED_RENDER_API {

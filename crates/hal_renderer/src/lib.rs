@@ -2,6 +2,7 @@
 #![feature(drain_filter)]
 #![feature(crate_visibility_modifier)]
 #![feature(fn_traits)]
+#![feature(associated_type_defaults)]
 
 pub extern crate vulkan_sys;
 mod api;

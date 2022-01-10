@@ -1,18 +1,21 @@
-use crate::configuration::*;
-use crate::error::{HalError, HalResult};
-use crate::{check_vk_result, ffi};
+use crate::{
+    check_vk_result,
+    configuration::*,
+    error::{HalError, HalResult},
+    ffi,
+    renderer::Renderer,
+};
 use log::{error, info, trace, warn};
-use std::ffi::{CStr, CString};
-use std::mem::MaybeUninit;
-use std::marker::PhantomData;
 use std::{
+    collections::HashSet,
+    ffi::{CStr, CString},
+    marker::PhantomData,
+    mem::MaybeUninit,
     os::raw::c_char,
     ptr,
     rc::{Rc, Weak},
     vec::Vec,
 };
-use std::collections::HashSet;
-use crate::renderer::Renderer;
 
 pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
     ffi::vk::VK_KHR_SURFACE_EXTENSION_NAME,
@@ -29,11 +32,9 @@ pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
     // #else
     // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
     // #endif
-
     ffi::vk::VK_NV_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
     // To legally use HDR formats
     ffi::vk::VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
-
     // /************************************************************************/
     // // Multi GPU Extensions
     // /************************************************************************/
@@ -47,21 +48,15 @@ pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
     ffi::vk::VK_EXT_DIRECT_MODE_DISPLAY_EXTENSION_NAME,
 ];
 
-
-
-static mut GLOBAL_ALLOCATION_CALLBACK: ffi::vk::VkAllocationCallbacks =  ffi::vk::VkAllocationCallbacks {
-    pUserData: ptr::null_mut(),
-    pfnAllocation: Option::None,
-    pfnReallocation: Option::None,
-    pfnFree: Option::None,
-    pfnInternalAllocation: Option::None,
-    pfnInternalFree: Option::None
-};
-
-pub struct VulkanRenderConfiguration {
-    instanceLayers: Vec<CString>,
-    instanceExtensions: Vec<CString>
-}
+static mut GLOBAL_ALLOCATION_CALLBACK: ffi::vk::VkAllocationCallbacks =
+    ffi::vk::VkAllocationCallbacks {
+        pUserData: ptr::null_mut(),
+        pfnAllocation: Option::None,
+        pfnReallocation: Option::None,
+        pfnFree: Option::None,
+        pfnInternalAllocation: Option::None,
+        pfnInternalFree: Option::None,
+    };
 
 pub struct VulkanRenderer {
     pub(in crate::vulkan) instance: ffi::vk::VkInstance,
@@ -69,7 +64,7 @@ pub struct VulkanRenderer {
     pub(in crate::vulkan) device: ffi::vk::VkDevice,
 }
 
-pub fn select_best_gpu(renderer: &mut VulkanRenderer) -> HalResult<()>{
+pub fn select_best_gpu(renderer: &mut VulkanRenderer) -> HalResult<()> {
     // assert!(renderer.instance != ptr.null());
     //
     // let mut device_count: u32 = 0;
@@ -90,14 +85,17 @@ pub fn select_best_gpu(renderer: &mut VulkanRenderer) -> HalResult<()>{
 }
 
 pub fn create_device(
-    renderer: &mut VulkanRenderer, configuration: &RendererConfig) -> HalResult<()>{
+    renderer: &mut VulkanRenderer,
+    configuration: &RendererConfig,
+) -> HalResult<()> {
     assert!(renderer.instance != ptr::null_mut());
     let mut device_extensions: Vec<CString> = Vec::new();
     Ok(())
 }
 
-pub fn create_instance (
-    renderer: &mut VulkanRenderer, configuration: &RendererConfig
+pub fn create_instance(
+    renderer: &mut VulkanRenderer,
+    configuration: &RendererConfig,
 ) -> HalResult<()> {
     // layers: Vec<const *c_char> = Vec::new();
     let application_name = CString::new("3DEngine").expect("CString::new failed");
@@ -160,17 +158,18 @@ pub fn create_instance (
     let mut wanted_instance_layers: HashSet<CString> = HashSet::new();
     for ext in GLOBAL_INSTANCE_EXTENSIONS {
         unsafe {
-            wanted_instance_extensions.insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
+            wanted_instance_extensions
+                .insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
         }
     }
 
     match &configuration.render_type {
         RendererConfigType::Vulkan(config) => {
-            for extension in &config.instanceExtensions {
+            for extension in &config.instance_extensions {
                 wanted_instance_extensions.insert(extension.clone());
             }
 
-            for layer in &config.instanceLayers {
+            for layer in &config.instance_layers {
                 wanted_instance_layers.insert(layer.clone());
             }
         }
@@ -187,7 +186,6 @@ pub fn create_instance (
         warn!("vkinstance-layer-missing: {}", layer.to_string_lossy());
         return false;
     });
-
 
     // Layer extensions
     for target_layer in &wanted_instance_layers {
@@ -232,7 +230,8 @@ pub fn create_instance (
     });
 
     let mut enabled_layers: Vec<*const c_char> = Vec::with_capacity(wanted_instance_layers.len());
-    let mut enabled_extensions: Vec<*const c_char> = Vec::with_capacity(wanted_instance_extensions.len());
+    let mut enabled_extensions: Vec<*const c_char> =
+        Vec::with_capacity(wanted_instance_extensions.len());
     for layer in &wanted_instance_layers {
         enabled_layers.push(layer.as_ptr());
     }
@@ -250,10 +249,14 @@ pub fn create_instance (
         enabledLayerCount: enabled_layers.len() as u32,
         ppEnabledLayerNames: enabled_layers.as_ptr(),
         enabledExtensionCount: enabled_extensions.len() as u32,
-        ppEnabledExtensionNames: enabled_extensions.as_ptr()
+        ppEnabledExtensionNames: enabled_extensions.as_ptr(),
     };
     unsafe {
-        check_vk_result!(ffi::vk::vkCreateInstance(&create_info, ptr::null(), &mut renderer.instance));
+        check_vk_result!(ffi::vk::vkCreateInstance(
+            &create_info,
+            ptr::null(),
+            &mut renderer.instance
+        ));
     }
 
     Ok(())
@@ -262,7 +265,9 @@ pub fn create_instance (
 impl Drop for VulkanRenderer {
     fn drop(&mut self) {
         if self.instance != ptr::null_mut() {
-            unsafe { ffi::vk::vkDestroyInstance(self.instance, ptr::null()); }
+            unsafe {
+                ffi::vk::vkDestroyInstance(self.instance, ptr::null());
+            }
         }
     }
 }
@@ -272,7 +277,7 @@ impl VulkanRenderer {
         let mut renderer = VulkanRenderer {
             instance: ptr::null_mut(),
             active_gpu: ptr::null_mut(),
-            device: ptr::null_mut()
+            device: ptr::null_mut(),
         };
         create_instance(&mut renderer, &config)?;
 

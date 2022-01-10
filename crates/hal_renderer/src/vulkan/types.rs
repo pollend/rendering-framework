@@ -1,25 +1,41 @@
-use crate::configuration::*;
-use crate::error::{HalError, HalResult};
-use crate::ffi;
-use crate::vulkan::*;
+use crate::{
+    configuration::*,
+    error::{HalError, HalResult},
+    ffi,
+    vulkan::*,
+};
 use std::{
     ptr,
     rc::{Rc, Weak},
 };
 
-pub type HalVKRendererImpl = Rc<VulkanRenderer>;
-pub type HalVKPipelineImpl = Rc<HalVKPipeline>;
+pub struct VulkanPipeline {
+    pub(in crate::vulkan) pipeline: ffi::vk::VkPipeline,
+    // ffi::vulkan::VkPipeline   pVkPipeline;
+    // PipelineType mType;
+    // uint32_t     mShaderStageCount;
+}
 
-pub struct HalVKQueue {}
+pub struct VulkanRootSignature {
+    pub(crate) pipeline_layout: ffi::vk::VkPipelineLayout,
+}
 
-pub struct HalVKBuffer {}
+pub struct VulkanSampler {
+    sampler: ffi::vk::VkSampler,
+    samplerYcbcrConversion: ffi::vk::VkSamplerYcbcrConversion,
+    samplerYcbcrConversionInfo: ffi::vk::VkSamplerYcbcrConversionInfo,
+}
 
-pub struct HalVKTexture {}
+pub struct VulkanQueue {}
 
-pub struct HalVKRenderTarget {}
+pub struct VulkanBuffer {}
 
-pub struct HalVKShader {
+pub struct VulkanTexture {}
+
+pub struct VulkanRenderTarget {}
+
+pub struct VulkanShader {
     shader_module: ffi::vk::VkShaderModule,
 }
 
-pub struct HalVKDescriptorSet {}
+pub struct VulkanDescriptorSet {}

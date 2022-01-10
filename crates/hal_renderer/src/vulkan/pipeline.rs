@@ -1,33 +1,14 @@
-use crate::configuration::*;
-use crate::error::{HalError, HalResult};
-use crate::ffi;
-use crate::vulkan::*;
+use crate::{
+    configuration::*,
+    error::{HalError, HalResult},
+    ffi,
+    renderer::*,
+    vulkan::*,
+};
 use std::{
+    mem::ManuallyDrop,
     ptr,
     rc::{Rc, Weak},
 };
+use std::borrow::Borrow;
 
-pub struct HalVKPipeline {
-    pipeline: ffi::vk::VkPipeline,
-    me: Weak<HalVKPipeline>,
-    // ffi::vulkan::VkPipeline   pVkPipeline;
-    // PipelineType mType;
-    // uint32_t     mShaderStageCount;
-}
-
-impl HalVKPipeline {
-    pub fn new(
-        renderer: &HalVKRendererImpl,
-        config: &PipelineConfig,
-    ) -> HalResult<Rc<HalVKPipeline>> {
-        match &config.pipeline_type {
-            PipelineType::Compute(compute_desc) => {}
-            PipelineType::Graphics(graphics_desc) => {}
-            PipelineType::Raytrace(raytrace_desc) => {}
-        }
-        Ok(Rc::new_cyclic(|self_weak| HalVKPipeline {
-            pipeline: ptr::null_mut(),
-            me: self_weak.clone(),
-        }))
-    }
-}

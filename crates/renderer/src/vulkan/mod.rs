@@ -1,12 +1,14 @@
 mod renderer;
 mod desc;
+mod device;
 
-use crate::{Api, APIType, DescriptorIndexMap, Fence, ffi, Queue, Renderer, RendererResult, RenderTarget, Sampler, Semaphore, Shader, Texture};
+use crate::{Api, APIType, DescriptorIndexMap, Fence, ffi, GPUCommonInfo, Queue, RenderContext, Renderer, RendererResult, RenderTarget, Sampler, Semaphore, Shader, Texture};
 
 #[derive(Clone)]
 pub struct VulkanAPI;
 
 impl crate::Api for VulkanAPI {
+    type RenderContext = VulkanRenderContext;
     type Renderer = VulkanRenderer;
     type Pipeline = VulkanPipeline;
     type Fence = VulkanFence;
@@ -18,8 +20,19 @@ impl crate::Api for VulkanAPI {
     type DescriptorIndexMap = VulkanDescriptorIndexMap;
     type Sampler = VulkanSampler;
 
-    const api: APIType = APIType::Vulkan;
+    const CURRENT_API: APIType = APIType::Vulkan;
 }
+
+pub struct VulkanRenderContext {
+    gpu: ffi::vk::VkPhysicalDevice,
+    gpu_properties: ffi::vk::VkPhysicalDeviceProperties2,
+    common: GPUCommonInfo
+}
+
+impl RenderContext for VulkanRenderContext {
+
+}
+
 
 pub struct VulkanRenderTarget {
 
@@ -79,7 +92,8 @@ impl Queue for VulkanQueue {
 }
 
 pub struct VulkanFence {
-
+    pub(in crate::vulkan) fence: ffi::vk::VkFence,
+    pub(in crate::vulkan) submitted: bool
 }
 
 impl Fence for VulkanFence {

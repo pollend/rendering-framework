@@ -1,7 +1,9 @@
+use crate::ffi;
+
 pub enum RendererError {
     Unhandled,
 
-    VulkanError(i32)
+    VulkanError(ffi::vk::VkResult)
 }
 
 pub type RendererResult<T> = Result<T, RendererError>;

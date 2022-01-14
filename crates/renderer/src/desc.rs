@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use crate::Api;
+use crate::types::{QueueFlag, QueueType};
 
 // pub union DescImpl {
 //     vulkan: VulkanDesc
@@ -25,4 +26,9 @@ pub struct CmdPoolDesc<'a, T: Api> {
     pub transient: bool
 }
 
-
+pub struct  QueueDesc {
+    pub queue_type: QueueType,
+    pub flag: QueueFlag,
+    pub priority: QueuePriority,
+    pub node_index: u32
+}

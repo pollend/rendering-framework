@@ -5,8 +5,9 @@ use std::os::raw::c_char;
 use std::ptr;
 use log::{info, warn};
 use crate::vulkan::{renderer, VulkanFence, VulkanPipeline, VulkanRenderer, VulkanRenderTarget, VulkanSemaphore};
-use crate::{check_vk_result, CmdPoolDesc, ffi, RenderDesc, Renderer, RendererResult, VulkanAPI};
+use crate::{check_vk_result, CmdPoolDesc, ffi, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI};
 use crate::desc::RenderDescImp;
+use crate::error::RendererError::VulkanError;
 
 
 pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
@@ -249,7 +250,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         pipeline.pipeline = ptr::null_mut();
     }
 
-    fn add_fence(&self) -> RendererResult<super::VulkanFence> {
+    unsafe fn add_fence(&self) -> RendererResult<super::VulkanFence> {
         assert!(self.device != ptr::null_mut());
 
         let fence_info: ffi::vk::VkFenceCreateInfo = ffi::vk::VkFenceCreateInfo{
@@ -261,30 +262,54 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             fence: ptr::null_mut(),
             submitted: false
         };
-        unsafe {
-            check_vk_result!(ffi::vk::vkCreateFence(
+        if let result = ffi::vk::vkCreateFence(
                 self.device,
                 &fence_info,
                 ptr::null_mut(),
                 &mut fence.fence
-            ));
+            ) != ffi::vk::VkResult_VK_SUCCESS {
+            Err(VulkanError(result));
         }
-
         Ok(fence)
     }
 
-    fn drop_fence(&self, fence: &mut super::VulkanFence) {
+    unsafe fn drop_fence(&self, fence: &mut super::VulkanFence) {
         assert!(fence.fence != ptr::null_mut());
         assert!(self.device != ptr::null_mut());
-        unsafe { ffi::vk::vkDestroyFence(self.device, fence.fence, ptr::null_mut()); }
+        ffi::vk::vkDestroyFence(self.device, fence.fence, ptr::null_mut());
         fence.fence = ptr::null_mut();
     }
 
-    fn add_semaphore(&self) -> RendererResult<super::VulkanSemaphore> {
+    unsafe fn add_semaphore(&self) -> RendererResult<super::VulkanSemaphore> {
+        assert!(self.device != ptr::null_mut());
+        let add_info = ffi::vk::VkSemaphoreCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            pNext: ptr::null_mut(),
+            flags: 0
+        };
+        let mut semaphore = VulkanSemaphore {
+            semaphore: ptr::null_mut(),
+            signaled: false
+        };
+        if let result = ffi::vk::vkCreateSemaphore(self.device, &add_info, ptr::null_mut(), &mut semaphore.semaphore) != ffi::vk::VkResult_VK_SUCCESS {
+            Err(VulkanError(result))
+        }
+        Ok(semaphore)
+    }
+
+    unsafe fn drop_semaphore(&self, semaphore: &mut super::VulkanSemaphore) -> RendererResult<()> {
+        assert!(semaphore.semaphore != ptr::null_mut());
+        assert!(self.device != ptr::null_mut());
+        ffi::vk::vkDestroySemaphore(self.device, semaphore.semaphore, ptr::null_mut());
+        semaphore.semaphore = ptr::null_mut();
+        Ok(())
+    }
+
+    unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
         todo!()
     }
 
-    fn drop_semaphore(&self, semaphore: &mut super::VulkanSemaphore) {
+    unsafe fn remove_queue(&self, queue: &mut super::VulkanQueue) {
         todo!()
     }
 
@@ -332,11 +357,4 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    fn begin_cmd(&self) {
-        todo!()
-    }
-
-    fn end_cmd(&self) {
-        todo!()
-    }
 }

@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::rc::Rc;
 use std::sync::Arc;
-use crate::desc::{CmdPoolDesc, RenderDesc};
+use crate::desc::{CmdPoolDesc, QueueDesc, RenderDesc};
 use crate::error::RendererResult;
 use crate::vulkan::VulkanAPI;
 
@@ -31,12 +31,13 @@ pub trait Api: Clone + Sized {
     type Pipeline: Pipeline;
     type Fence: Fence;
     type Semaphore: Semaphore;
-    type Queue: Queue;
+    type Queue: Queue<Self>;
     type Texture: Texture;
     type Shader: Shader;
     type RenderTarget: RenderTarget;
     type DescriptorIndexMap: DescriptorIndexMap;
     type Sampler: Sampler;
+    type Command: Command;
 
     const CURRENT_API: APIType;
 }
@@ -47,12 +48,15 @@ pub trait Renderer<A: Api> : Sized {
     fn add_pipeline(&self) -> A::Pipeline;
     fn drop_pipeline(&self,pipeline: &mut A::Pipeline);
 
-    fn add_fence(&self) -> RendererResult<A::Fence>;
-    fn drop_fence(&self, fence: &mut A::Fence);
+    unsafe fn add_fence(&self) -> RendererResult<A::Fence>;
+    unsafe fn drop_fence(&self, fence: &mut A::Fence);
 
     // semaphore
-    fn add_semaphore(&self) -> RendererResult<A::Semaphore>;
-    fn drop_semaphore(&self, semaphore: &mut A::Semaphore);
+    unsafe fn add_semaphore(&self) -> RendererResult<A::Semaphore>;
+    unsafe fn drop_semaphore(&self, semaphore: &mut A::Semaphore) -> RendererResult<()>;
+
+    unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<A::Queue>;
+    unsafe fn remove_queue(&self, queue: &mut A::Queue);
 
     fn add_swap_chain(&self);
     fn drop_swap_chain(&self);
@@ -71,8 +75,32 @@ pub trait Renderer<A: Api> : Sized {
 
     // command buffer functions
     fn reset_cmd_pool(&self);
+
+}
+
+pub trait Command {
+    // commands
     fn begin_cmd(&self);
     fn end_cmd(&self);
+    fn cmd_bind_render_target(&self);
+    fn cmd_set_shading_rate(&self);
+    fn cmd_set_viewport(&self);
+    fn cmd_set_scissor(&self);
+    fn cmd_set_stencil_reference_value(&self);
+    fn cmd_bind_pipeline(&self);
+    fn cmd_bind_descriptor_set(&self);
+    fn cmd_bind_index_buffer(&self);
+    fn cmd_raw(&self);
+    fn cmd_draw_instanced(&self);
+    fn cmd_draw_indexed(&self);
+    fn cmd_draw_indexed_instanced(&self);
+    fn cmd_dispatch(&self);
+
+    // transition commands
+    fn cmd_resource_barrier(&self);
+
+    // virtual textures
+    fn cmd_update_virtual_texture(&self);
 }
 
 pub trait RenderContext {
@@ -88,8 +116,13 @@ pub trait  Shader {
 
 }
 
-pub trait Queue {
-
+pub trait Queue<A: Api> {
+    fn submit(&self);
+    fn present(&self);
+    fn wait_idle(&self);
+    fn fence_status(&self);
+    fn wait_fence(&self);
+    fn toggle_v_sync(&self);
 }
 
 pub trait Sampler {

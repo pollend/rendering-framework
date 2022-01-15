@@ -7,7 +7,7 @@ pub enum DescriptorUpdateFrequency {
     DescriptorUpdateFreqCount,
 }
 
-
+#[derive(PartialEq)]
 pub enum QueueType {
     QueueTypeGraphics = 0,
     QueueTypeTransfer,
@@ -23,7 +23,7 @@ pub enum QueueFlag
     MaxQueueFlag = 0xFFFFFFFF
 }
 
-enum QueuePriority {
+pub enum QueuePriority {
     QueuePriorityNormal,
     QueuePriorityHigh,
     QueuePriorityGlobalRealtime,

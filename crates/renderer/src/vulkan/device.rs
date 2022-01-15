@@ -3,14 +3,6 @@ use std::{mem, ptr};
 use crate::{ffi, GPUCommonInfo, RendererResult};
 use crate::vulkan::VulkanRenderer;
 
-
-macro_rules! add_feature {
-    ($current:expr,$next:expr) => {
-        $next.pNext = $current.pNext;
-        $current.pNext = unsafe { mem::transmute(&mut $next) };
-    };
-}
-
 pub(in crate::vulkan) struct VulkanGPUInfo {
     physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2,
     physical_memory_properties: ffi::vk::VkPhysicalDeviceMemoryProperties,
@@ -24,27 +16,32 @@ impl VulkanGPUInfo {
         return &self.physical_device_features.features;
     }
 
-    pub fn all(renderer: &VulkanRenderer) -> Vec<VulkanGPUInfo> {
+    pub fn get_device_properties(&self) -> &ffi::vk::VkPhysicalDeviceFeatures {
+        return &self.physical_device_properties.properties;
+    }
+
+
+    pub unsafe fn all(instance: ffi::vk::VkInstance) -> Vec<VulkanGPUInfo> {
+        assert!(instance != ptr::null_mut());
 
         let mut device_count: u32 = 0;
-        let mut vk_result = unsafe {
+        let mut vk_result =
             ffi::vk::vkEnumeratePhysicalDevices(
-                renderer.instance,
+                instance,
                 &mut device_count,
                 ptr::null_mut(),
-            )
-        };
+            );
+
         assert!(vk_result == ffi::vk::VkResult_VK_SUCCESS);
         let mut details: Vec<VulkanGPUInfo> = Vec::with_capacity(device_count as usize);
         let mut physical_devices: Vec<ffi::vk::VkPhysicalDevice> =
             Vec::with_capacity(device_count as usize);
-        vk_result = unsafe {
+        vk_result =
             ffi::vk::vkEnumeratePhysicalDevices(
-                renderer.instance,
+                instance,
                 &mut device_count,
                 physical_devices.as_mut_ptr(),
-            )
-        };
+            );
 
         assert!(vk_result == ffi::vk::VkResult_VK_SUCCESS);
         for device in &physical_devices {
@@ -56,7 +53,7 @@ impl VulkanGPUInfo {
         details
     }
 
-    pub fn gpu(device: &ffi::vk::VkPhysicalDevice) -> RendererResult<VulkanGPUInfo> {
+    pub unsafe fn gpu(device: &ffi::vk::VkPhysicalDevice) -> RendererResult<VulkanGPUInfo> {
         let mut detail: VulkanGPUInfo = VulkanGPUInfo {
             physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2 {
                 sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR,
@@ -85,23 +82,19 @@ impl VulkanGPUInfo {
                 supportedOperations: 0,
                 quadOperationsInAllStages: 0,
             };
-        add_feature!(detail.physical_device_properties, subgroup_properties);
+        subgroup_properties.pNext = detail.physical_device_properties.pNext;
+        detail.physical_device_properties.pNext = mem::transmute(&mut subgroup_properties);
 
-        unsafe {
-            ffi::vk::vkGetPhysicalDeviceMemoryProperties(
-                *device,
-                &mut detail.physical_memory_properties,
-            );
-        }
-        unsafe {
-            ffi::vk::vkGetPhysicalDeviceFeatures2(*device, &mut detail.physical_device_features);
-        }
-        unsafe {
-            ffi::vk::vkGetPhysicalDeviceProperties2KHR(
-                *device,
-                &mut detail.physical_device_properties,
-            );
-        }
+        ffi::vk::vkGetPhysicalDeviceMemoryProperties(
+            *device,
+            &mut detail.physical_memory_properties,
+        );
+        ffi::vk::vkGetPhysicalDeviceFeatures2(*device, &mut detail.physical_device_features);
+        ffi::vk::vkGetPhysicalDeviceProperties2KHR(
+            *device,
+            &mut detail.physical_device_properties,
+        );
+
 
         let device_properties = &detail.physical_device_properties.properties;
 

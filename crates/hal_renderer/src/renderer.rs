@@ -15,7 +15,6 @@ use crate::{
 };
 
 use crate::vulkan::vk_drop_pipeline;
-use hal_macro::api_handler;
 use std::{
     ffi::c_void,
     mem::ManuallyDrop,

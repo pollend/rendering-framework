@@ -1,6 +1,7 @@
 mod renderer;
 mod desc;
 mod device;
+mod types;
 
 use crate::{Api, APIType, Command, DescriptorIndexMap, Fence, ffi, GPUCommonInfo, Queue, RenderContext, Renderer, RendererResult, RenderTarget, Sampler, Semaphore, Shader, Texture};
 

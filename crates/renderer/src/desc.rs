@@ -1,6 +1,6 @@
 use std::ffi::{CStr, CString};
 use crate::Api;
-use crate::types::{QueueFlag, QueueType};
+use crate::types::{QueueFlag, QueuePriority, QueueType};
 
 // pub union DescImpl {
 //     vulkan: VulkanDesc

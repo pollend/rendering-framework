@@ -5,10 +5,65 @@ use std::os::raw::c_char;
 use std::ptr;
 use log::{info, warn};
 use crate::vulkan::{renderer, VulkanFence, VulkanPipeline, VulkanRenderer, VulkanRenderTarget, VulkanSemaphore};
-use crate::{check_vk_result, CmdPoolDesc, ffi, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI};
+use crate::{Api, check_vk_result, CmdPoolDesc, ffi, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI};
 use crate::desc::RenderDescImp;
 use crate::error::RendererError::VulkanError;
+use crate::types::QueueType;
+use crate::vulkan::device::VulkanGPUInfo;
 
+
+unsafe fn select_best_gpu(renderer: &mut VulkanRenderer) {
+    let vk_gpus = VulkanGPUInfo::all(renderer.instance);
+    for gpu in &vk_gpus {
+        gpu.get_physical_features()
+    }
+}
+
+
+struct QueueFamilyResult {
+    properties: ffi::vk::VkQueueFamilyProperties,
+    family_index: u8,
+    queue_index: u8
+}
+
+unsafe fn util_find_queue_family_index(renderer: &VulkanRenderer, node_index: u32, queue_type: QueueType) ->
+                                                              RendererResult<QueueFamilyResult> {
+    let mut queue_family_index: u32 = u32::MAX;
+    let mut queue_index: u32 = u32::MAX;
+    let mut required_flags = queue_type.to_vk_queue();
+    let mut found = false;
+
+    let mut family_property_count: u32 = 0;
+    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(renderer.active_gpu, &mut family_property_count, ptr::null_mut());
+    let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> = vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
+    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(renderer.active_gpu, &mut family_property_count, family_properties.as_mut_ptr());
+
+    let mut min_queue_flag: u32 = u32::MAX;
+
+    for (i, value) in family_properties.iter().enumerate() {
+        let queue_flags = family_properties[i].queueFlags;
+        let is_graphics_queue = (queue_flags & ffi::vk::VkQueueFlagBits_VK_QUEUE_GRAPHICS_BIT) > 0;
+        let filter_flags = queue_flags & required_flags;
+        if queue_type == QueueType::QueueTypeGraphics && is_graphics_queue {
+            found = true;
+            queue_family_index = i as u32;
+            queue_index = 0;
+            break
+        }
+        if (queue_flags & required_flags) > 0 && (queue_flags & !required_flags) == 0 {
+
+        }
+    }
+
+    let mut result = QueueFamilyResult {
+        properties: MaybeUninit::zeroed().assume_init(),
+        family_index: 0,
+        queue_index: 0
+    };
+
+    return  Ok(result);
+
+}
 
 pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
     ffi::vk::VK_KHR_SURFACE_EXTENSION_NAME,
@@ -220,6 +275,7 @@ fn init_instance(
     Ok(())
 }
 
+
 impl Renderer<VulkanAPI> for VulkanRenderer {
     fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<VulkanRenderer> {
         let mut renderer = VulkanRenderer {
@@ -262,13 +318,15 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             fence: ptr::null_mut(),
             submitted: false
         };
-        if let result = ffi::vk::vkCreateFence(
-                self.device,
-                &fence_info,
-                ptr::null_mut(),
-                &mut fence.fence
-            ) != ffi::vk::VkResult_VK_SUCCESS {
-            Err(VulkanError(result));
+
+        let result =  ffi::vk::vkCreateFence(
+            self.device,
+            &fence_info,
+            ptr::null_mut(),
+            &mut fence.fence
+        );
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            return Err(VulkanError(result))
         }
         Ok(fence)
     }
@@ -291,8 +349,9 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             semaphore: ptr::null_mut(),
             signaled: false
         };
-        if let result = ffi::vk::vkCreateSemaphore(self.device, &add_info, ptr::null_mut(), &mut semaphore.semaphore) != ffi::vk::VkResult_VK_SUCCESS {
-            Err(VulkanError(result))
+        let result = ffi::vk::vkCreateSemaphore(self.device, &add_info, ptr::null_mut(), &mut semaphore.semaphore);
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            return Err(VulkanError(result))
         }
         Ok(semaphore)
     }
@@ -306,6 +365,13 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     }
 
     unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
+        let node_index = desc.node_index;
+        // let mut queue_property = ffi::vk::VkQueueFamilyProperties {
+        //     queueFlags
+        //     queueCount
+        //     timestampValidBits
+        //     minImageTransferGranularity
+        // }
         todo!()
     }
 

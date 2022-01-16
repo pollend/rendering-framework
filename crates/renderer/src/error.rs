@@ -3,11 +3,10 @@ use crate::ffi;
 pub enum RendererError {
     Unhandled,
 
-    VulkanError(ffi::vk::VkResult)
+    VulkanError(ffi::vk::VkResult),
 }
 
 pub type RendererResult<T> = Result<T, RendererError>;
-
 
 #[macro_export]
 macro_rules! check_vk_result {

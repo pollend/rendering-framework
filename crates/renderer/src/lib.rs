@@ -1,28 +1,36 @@
 #![feature(associated_type_defaults)]
 
-use std::ffi::CStr;
-use std::rc::Rc;
-use std::sync::Arc;
-use crate::desc::{CmdPoolDesc, QueueDesc, RenderDesc};
-use crate::error::RendererResult;
-use crate::vulkan::VulkanAPI;
+use crate::{
+    desc::{CmdPoolDesc, QueueDesc, RenderDesc},
+    error::RendererResult,
+    vulkan::VulkanAPI,
+};
+use std::{ffi::CStr};
+use crate::types::{GPUSupportedFeatures, ShadingRates};
 
-mod vulkan;
-mod types;
-mod error;
 mod desc;
+mod error;
+mod types;
+mod vulkan;
 
 pub mod ffi {
     pub use vulkan_sys as vk;
 }
 
 pub struct GPUCommonInfo {
-
+    uniform_buffer_alignment: u32,
+    upload_buffer_texture_alignment: u32,
+    upload_buffer_texture_row_alignment: u32,
+    max_vertex_input_bindings: u32,
+    max_root_signature_dwords: u32,
+    wave_lane_count: u32,
+    features: GPUSupportedFeatures,
+    shading_rates: ShadingRates
 }
 
 pub enum APIType {
     None,
-    Vulkan
+    Vulkan,
 }
 
 pub trait Api: Clone + Sized {
@@ -42,11 +50,11 @@ pub trait Api: Clone + Sized {
     const CURRENT_API: APIType;
 }
 
-pub trait Renderer<A: Api> : Sized {
-    fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<A::Renderer>;
+pub trait Renderer<A: Api>: Sized {
+    unsafe fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<A::Renderer>;
 
     fn add_pipeline(&self) -> A::Pipeline;
-    fn drop_pipeline(&self,pipeline: &mut A::Pipeline);
+    fn drop_pipeline(&self, pipeline: &mut A::Pipeline);
 
     unsafe fn add_fence(&self) -> RendererResult<A::Fence>;
     unsafe fn drop_fence(&self, fence: &mut A::Fence);
@@ -75,7 +83,6 @@ pub trait Renderer<A: Api> : Sized {
 
     // command buffer functions
     fn reset_cmd_pool(&self);
-
 }
 
 pub trait Command {
@@ -105,16 +112,11 @@ pub trait Command {
 
 pub trait RenderContext {
     // fn info(&self) -> &GPUCommonInfo;
-
 }
 
-pub trait Texture {
+pub trait Texture {}
 
-}
-
-pub trait  Shader {
-
-}
+pub trait Shader {}
 
 pub trait Queue<A: Api> {
     fn submit(&self);
@@ -125,29 +127,17 @@ pub trait Queue<A: Api> {
     fn toggle_v_sync(&self);
 }
 
-pub trait Sampler {
+pub trait Sampler {}
 
-}
+pub trait DescriptorIndexMap {}
 
-pub trait DescriptorIndexMap {
+pub trait RenderTarget {}
 
-}
+pub trait Semaphore {}
 
-pub trait RenderTarget {
+pub trait Fence {}
 
-}
-
-pub trait Semaphore {
-
-}
-
-pub trait Fence {
-
-}
-
-pub trait Pipeline {
-
-}
+pub trait Pipeline {}
 
 // struct Example<A: Api> {
 //     render: A::Renderer
@@ -167,4 +157,3 @@ pub trait Pipeline {
 // pub fn example() {
 //     let a: Example<VulkanAPI>;
 // }
-

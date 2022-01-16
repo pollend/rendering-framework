@@ -1,9 +1,13 @@
-mod renderer;
 mod desc;
 mod device;
+mod renderer;
 mod types;
 
-use crate::{Api, APIType, Command, DescriptorIndexMap, Fence, ffi, GPUCommonInfo, Queue, RenderContext, Renderer, RendererResult, RenderTarget, Sampler, Semaphore, Shader, Texture};
+use crate::{
+    ffi, APIType, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext,
+    RenderTarget, Sampler, Semaphore, Shader, Texture,
+};
+use crate::vulkan::types::VulkanSupportedFeatures;
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -25,9 +29,7 @@ impl crate::Api for VulkanAPI {
     const CURRENT_API: APIType = APIType::Vulkan;
 }
 
-pub struct VulkanCommand {
-
-}
+pub struct VulkanCommand {}
 
 impl Command for VulkanCommand {
     fn begin_cmd(&self) {
@@ -102,67 +104,39 @@ impl Command for VulkanCommand {
 pub struct VulkanRenderContext {
     gpu: ffi::vk::VkPhysicalDevice,
     gpu_properties: ffi::vk::VkPhysicalDeviceProperties2,
-    common: GPUCommonInfo
+    common: GPUCommonInfo,
 }
 
-impl RenderContext for VulkanRenderContext {
+impl RenderContext for VulkanRenderContext {}
 
-}
+pub struct VulkanRenderTarget {}
 
+impl RenderTarget for VulkanRenderTarget {}
 
-pub struct VulkanRenderTarget {
+pub struct VulkanSampler {}
 
-}
+impl Sampler for VulkanSampler {}
 
-impl RenderTarget for VulkanRenderTarget {
+pub struct VulkanDescriptorIndexMap {}
 
-}
+impl DescriptorIndexMap for VulkanDescriptorIndexMap {}
 
-pub struct VulkanSampler {
+pub struct VulkanShader {}
 
-}
+impl Shader for VulkanShader {}
 
-impl Sampler for VulkanSampler {
+pub struct VulkanTexture {}
 
-}
-
-pub struct VulkanDescriptorIndexMap {
-
-}
-
-impl DescriptorIndexMap for VulkanDescriptorIndexMap {
-
-}
-
-pub struct VulkanShader {
-
-}
-
-impl Shader for VulkanShader {
-
-}
-
-
-pub struct VulkanTexture {
-
-}
-
-impl Texture for VulkanTexture {
-
-}
+impl Texture for VulkanTexture {}
 
 pub struct VulkanSemaphore {
     semaphore: ffi::vk::VkSemaphore,
-    signaled: bool
+    signaled: bool,
 }
 
-impl Semaphore for VulkanSemaphore {
+impl Semaphore for VulkanSemaphore {}
 
-}
-
-pub struct  VulkanQueue {
-
-}
+pub struct VulkanQueue {}
 
 impl Queue<VulkanAPI> for VulkanQueue {
     fn submit(&self) {
@@ -192,29 +166,28 @@ impl Queue<VulkanAPI> for VulkanQueue {
 
 pub struct VulkanFence {
     pub(in crate::vulkan) fence: ffi::vk::VkFence,
-    pub(in crate::vulkan) submitted: bool
+    pub(in crate::vulkan) submitted: bool,
 }
 
-impl Fence for VulkanFence {
-
-}
-
+impl Fence for VulkanFence {}
 
 pub struct VulkanPipeline {
-    pipeline: ffi::vk::VkPipeline
-    // PipelineType mType;
-    // uint32_t     mShaderStageCount;
-    //In DX12 this information is stored in ID3D12StateObject.
-    //But for Vulkan we need to store it manually
-    // const char** ppShaderStageNames;
+    pipeline: ffi::vk::VkPipeline, // PipelineType mType;
+                                   // uint32_t     mShaderStageCount;
+                                   //In DX12 this information is stored in ID3D12StateObject.
+                                   //But for Vulkan we need to store it manually
+                                   // const char** ppShaderStageNames;
 }
 
-impl crate::Pipeline for VulkanPipeline {
-}
+impl crate::Pipeline for VulkanPipeline {}
 
 pub struct VulkanRenderer {
     pub(in crate::vulkan) instance: ffi::vk::VkInstance,
-    pub(in crate::vulkan) active_gpu: ffi::vk::VkPhysicalDevice,
-    pub(in crate::vulkan) device: ffi::vk::VkDevice,
-}
 
+    pub(in crate::vulkan) active_gpu: ffi::vk::VkPhysicalDevice,
+    pub(in crate::vulkan) active_gpu_properties: Option<ffi::vk::VkPhysicalDeviceProperties>,
+    pub(in crate::vulkan) active_gpu_common_info: Option<GPUCommonInfo>,
+
+    pub(in crate::vulkan) device: ffi::vk::VkDevice,
+    pub(in crate::vulkan) features: VulkanSupportedFeatures
+}

@@ -1,164 +1,122 @@
-use std::collections::HashSet;
-use std::ffi::{CStr, CString};
-use std::mem::MaybeUninit;
-use std::os::raw::c_char;
-use std::ptr;
+use crate::{
+    check_vk_result,
+    desc::RenderDescImp,
+    error::RendererError::{VulkanError},
+    ffi,
+    types::QueueType,
+    vulkan::{
+        device::VulkanGPUInfo, VulkanPipeline, VulkanRenderTarget,
+        VulkanRenderer, VulkanSemaphore,
+    }, CmdPoolDesc, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI,
+};
 use log::{info, warn};
-use crate::vulkan::{renderer, VulkanFence, VulkanPipeline, VulkanRenderer, VulkanRenderTarget, VulkanSemaphore};
-use crate::{Api, check_vk_result, CmdPoolDesc, ffi, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI};
-use crate::desc::RenderDescImp;
-use crate::error::RendererError::VulkanError;
-use crate::types::QueueType;
-use crate::vulkan::device::VulkanGPUInfo;
-
-
-unsafe fn select_best_gpu(renderer: &mut VulkanRenderer) {
-    let vk_gpus = VulkanGPUInfo::all(renderer.instance);
-    for gpu in &vk_gpus {
-        gpu.get_physical_features()
-    }
-}
+use std::{
+    collections::HashSet,
+    ffi::{CStr, CString},
+    mem::MaybeUninit,
+    os::raw::c_char,
+    ptr
+};
+use crate::vulkan::types::{GLOBAL_INSTANCE_EXTENSIONS, VulkanSupportedFeatures};
 
 
 struct QueueFamilyResult {
     properties: ffi::vk::VkQueueFamilyProperties,
     family_index: u8,
-    queue_index: u8
+    queue_index: u8,
 }
 
-unsafe fn util_find_queue_family_index(renderer: &VulkanRenderer, node_index: u32, queue_type: QueueType) ->
-                                                              RendererResult<QueueFamilyResult> {
+unsafe fn util_find_queue_family_index(
+    renderer: &VulkanRenderer,
+    _node_index: u32,
+    queue_type: QueueType,
+) -> RendererResult<QueueFamilyResult> {
     let mut queue_family_index: u32 = u32::MAX;
     let mut queue_index: u32 = u32::MAX;
-    let mut required_flags = queue_type.to_vk_queue();
+    let required_flags = queue_type.to_vk_queue();
     let mut found = false;
 
     let mut family_property_count: u32 = 0;
-    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(renderer.active_gpu, &mut family_property_count, ptr::null_mut());
-    let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> = vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
-    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(renderer.active_gpu, &mut family_property_count, family_properties.as_mut_ptr());
+    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(
+        renderer.active_gpu,
+        &mut family_property_count,
+        ptr::null_mut(),
+    );
+    let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> =
+        vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
+    ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(
+        renderer.active_gpu,
+        &mut family_property_count,
+        family_properties.as_mut_ptr(),
+    );
 
-    let mut min_queue_flag: u32 = u32::MAX;
+    let _min_queue_flag: u32 = u32::MAX;
 
-    for (i, value) in family_properties.iter().enumerate() {
+    for (i, _value) in family_properties.iter().enumerate() {
         let queue_flags = family_properties[i].queueFlags;
         let is_graphics_queue = (queue_flags & ffi::vk::VkQueueFlagBits_VK_QUEUE_GRAPHICS_BIT) > 0;
-        let filter_flags = queue_flags & required_flags;
+        let _filter_flags = queue_flags & required_flags;
         if queue_type == QueueType::QueueTypeGraphics && is_graphics_queue {
             found = true;
             queue_family_index = i as u32;
             queue_index = 0;
-            break
+            break;
         }
-        if (queue_flags & required_flags) > 0 && (queue_flags & !required_flags) == 0 {
-
-        }
+        if (queue_flags & required_flags) > 0 && (queue_flags & !required_flags) == 0 {}
     }
 
-    let mut result = QueueFamilyResult {
+    let result = QueueFamilyResult {
         properties: MaybeUninit::zeroed().assume_init(),
         family_index: 0,
-        queue_index: 0
+        queue_index: 0,
     };
 
-    return  Ok(result);
-
-}
-
-pub const GLOBAL_INSTANCE_EXTENSIONS: &[&[u8]] = &[
-    ffi::vk::VK_KHR_SURFACE_EXTENSION_NAME,
-    #[cfg(feature = "vulkan_sys/vulkan-win32")]
-        ffi::vk::VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-    #[cfg(feature = "vulkan_sys/vulkan-xlib")]
-        ffi::vk::VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-    #[cfg(feature = "vulkan_sys/vulkan-ggp")]
-        ffi::vk::VK_GGP_STREAM_DESCRIPTOR_SURFACE_EXTENSION_NAME,
-    #[cfg(feature = "vulkan_sys/vulkan-vi")]
-        ffi::vk::VK_NN_VI_SURFACE_EXTENSION_NAME,
-    // #ifdef ENABLE_DEBUG_UTILS_EXTENSION
-    // VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-    // #else
-    // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
-    // #endif
-    ffi::vk::VK_NV_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
-    // To legally use HDR formats
-    ffi::vk::VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
-    // /************************************************************************/
-    // // Multi GPU Extensions
-    // /************************************************************************/
-    // #if VK_KHR_device_group_creation
-    // VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME,
-    // #endif
-    /************************************************************************/
-    // VR Extensions
-    /************************************************************************/
-    ffi::vk::VK_KHR_DISPLAY_EXTENSION_NAME,
-    ffi::vk::VK_EXT_DIRECT_MODE_DISPLAY_EXTENSION_NAME,
-];
-
-
-fn init_device(
-    renderer: &mut VulkanRenderer,
-    desc: &RenderDesc
-) -> RendererResult<()>{
-    assert!(renderer.instance != ptr::null_mut());
-
-    Ok(())
+    return Ok(result);
 }
 
 
-fn init_instance(
-    renderer: &mut VulkanRenderer,
-    desc: &RenderDesc,
-) -> RendererResult<()> {
+unsafe fn init_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> RendererResult<()> {
     // layers: Vec<const *c_char> = Vec::new();
     let application_name = CString::new("3DEngine").expect("CString::new failed");
     let engine_name = CString::new("3DEngine").expect("CString::new failed");
 
-    let mut loaded_extension: Vec<CString> = vec![];
+    let _loaded_extension: Vec<CString> = vec![];
 
     let mut layer_count: u32 = 0;
     let mut ext_count: u32 = 0;
-    unsafe {
-        ffi::vk::vkEnumerateInstanceLayerProperties(&mut layer_count, ptr::null_mut());
-        ffi::vk::vkEnumerateInstanceExtensionProperties(
-            ptr::null_mut(),
-            &mut ext_count,
-            ptr::null_mut(),
-        );
-    }
+    ffi::vk::vkEnumerateInstanceLayerProperties(&mut layer_count, ptr::null_mut());
+    ffi::vk::vkEnumerateInstanceExtensionProperties(
+        ptr::null_mut(),
+        &mut ext_count,
+        ptr::null_mut(),
+    );
 
     let mut layer_properties: Vec<ffi::vk::VkLayerProperties> =
-        vec![unsafe { MaybeUninit::zeroed().assume_init() }; layer_count as usize];
+        vec![MaybeUninit::zeroed().assume_init(); layer_count as usize];
     let mut ext_properties: Vec<ffi::vk::VkExtensionProperties> =
-        vec![unsafe { MaybeUninit::zeroed().assume_init() }; ext_count as usize];
-    unsafe {
-        ffi::vk::vkEnumerateInstanceLayerProperties(
-            &mut layer_count,
-            layer_properties.as_mut_ptr(),
-        );
-        ffi::vk::vkEnumerateInstanceExtensionProperties(
-            ptr::null_mut(),
-            &mut ext_count,
-            ext_properties.as_mut_ptr(),
-        );
-    }
+        vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
+    ffi::vk::vkEnumerateInstanceLayerProperties(&mut layer_count, layer_properties.as_mut_ptr());
+    ffi::vk::vkEnumerateInstanceExtensionProperties(
+        ptr::null_mut(),
+        &mut ext_count,
+        ext_properties.as_mut_ptr(),
+    );
 
     for layer_property in &layer_properties {
         info!(
             "vkinstance-layer: {}",
-            unsafe { CStr::from_ptr(layer_property.layerName.as_ptr()) }.to_string_lossy()
+            CStr::from_ptr(layer_property.layerName.as_ptr()).to_string_lossy()
         );
     }
 
     for ext_property in &ext_properties {
         info!(
             "vkinstance-ext: {}",
-            unsafe { CStr::from_ptr(ext_property.extensionName.as_ptr()) }.to_string_lossy()
+            CStr::from_ptr(ext_property.extensionName.as_ptr()).to_string_lossy()
         );
     }
 
-    let mut create_info = ffi::vk::VkApplicationInfo {
+    let create_info = ffi::vk::VkApplicationInfo {
         sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_APPLICATION_INFO,
         pNext: ptr::null_mut(),
         pApplicationName: application_name.as_ptr(),
@@ -171,10 +129,7 @@ fn init_instance(
     let mut wanted_instance_extensions: HashSet<CString> = HashSet::new();
     let mut wanted_instance_layers: HashSet<CString> = HashSet::new();
     for ext in GLOBAL_INSTANCE_EXTENSIONS {
-        unsafe {
-            wanted_instance_extensions
-                .insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
-        }
+        wanted_instance_extensions.insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
     }
 
     match &desc.imp {
@@ -204,26 +159,23 @@ fn init_instance(
     // Layer extensions
     for target_layer in &wanted_instance_layers {
         let mut layer_target_ext_count: u32 = 0;
-        unsafe {
-            ffi::vk::vkEnumerateInstanceExtensionProperties(
-                target_layer.as_ptr(),
-                &mut layer_target_ext_count,
-                ptr::null_mut(),
-            );
-        }
+        ffi::vk::vkEnumerateInstanceExtensionProperties(
+            target_layer.as_ptr(),
+            &mut layer_target_ext_count,
+            ptr::null_mut(),
+        );
+
         let mut layer_target_ext: Vec<ffi::vk::VkExtensionProperties> =
-            vec![unsafe { MaybeUninit::zeroed().assume_init() }; ext_count as usize];
-        unsafe {
-            ffi::vk::vkEnumerateInstanceExtensionProperties(
-                target_layer.as_ptr(),
-                &mut layer_target_ext_count,
-                layer_target_ext.as_mut_ptr(),
-            );
-        }
+            vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
+        ffi::vk::vkEnumerateInstanceExtensionProperties(
+            target_layer.as_ptr(),
+            &mut layer_target_ext_count,
+            layer_target_ext.as_mut_ptr(),
+        );
 
         wanted_instance_extensions.retain(move |layer| {
             for ext_property in &layer_target_ext {
-                let extension_name = unsafe { CStr::from_ptr(ext_property.extensionName.as_ptr()) };
+                let extension_name = CStr::from_ptr(ext_property.extensionName.as_ptr());
                 if extension_name.eq(layer) {
                     return true;
                 }
@@ -235,7 +187,7 @@ fn init_instance(
     // Standalone extensions
     wanted_instance_extensions.retain(move |layer| {
         for ext_property in &ext_properties {
-            let extension_name = unsafe { CStr::from_ptr(ext_property.extensionName.as_ptr()) };
+            let extension_name = CStr::from_ptr(ext_property.extensionName.as_ptr());
             if extension_name.eq(layer) {
                 return true;
             }
@@ -255,7 +207,7 @@ fn init_instance(
     }
 
     // enabled_layers.push()
-    let mut create_info = ffi::vk::VkInstanceCreateInfo {
+    let create_info = ffi::vk::VkInstanceCreateInfo {
         sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         pNext: ptr::null(),
         flags: 0,
@@ -265,28 +217,43 @@ fn init_instance(
         enabledExtensionCount: enabled_extensions.len() as u32,
         ppEnabledExtensionNames: enabled_extensions.as_ptr(),
     };
-    unsafe {
-        check_vk_result!(ffi::vk::vkCreateInstance(
-            &create_info,
-            ptr::null(),
-            &mut renderer.instance
-        ));
-    }
+
+    check_vk_result!(ffi::vk::vkCreateInstance(
+        &create_info,
+        ptr::null(),
+        &mut renderer.instance
+    ));
+
     Ok(())
 }
 
+unsafe fn init_device(renderer: &mut VulkanRenderer, _desc: &RenderDesc) -> RendererResult<()> {
+    assert!(renderer.instance != ptr::null_mut());
+
+    let devices = VulkanGPUInfo::all(renderer.instance);
+    let gpu = VulkanGPUInfo::select_best_gpu(renderer.instance, &devices)?;
+
+    renderer.active_gpu_properties = Some(gpu.get_device_properties().clone());
+    // renderer.active_gpu_common_info = Some(gpu
+    renderer.active_gpu = gpu.get_device();
+    Ok(())
+}
 
 impl Renderer<VulkanAPI> for VulkanRenderer {
-    fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<VulkanRenderer> {
+    unsafe fn init(_name: &CStr, desc: &RenderDesc) -> RendererResult<VulkanRenderer> {
         let mut renderer = VulkanRenderer {
             instance: ptr::null_mut(),
             active_gpu: ptr::null_mut(),
+            active_gpu_properties: None,
+            active_gpu_common_info: None,
             device: ptr::null_mut(),
+            features: VulkanSupportedFeatures::None
         };
 
         match init_instance(&mut renderer, desc) {
-            Ok(()) => info!("instance created"),
+            // Ok() => ,
             Err(e) => return Err(e),
+            _ => {}
         }
         Ok(renderer)
     }
@@ -295,13 +262,12 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    fn drop_pipeline(&self, pipeline: &mut super::VulkanPipeline ) {
+    fn drop_pipeline(&self, pipeline: &mut super::VulkanPipeline) {
         assert!(self.device != ptr::null_mut());
         assert!(pipeline.pipeline != ptr::null_mut());
 
         unsafe {
-            ffi::vk::vkDestroyPipeline(self.device, pipeline.pipeline,
-                                       ptr::null_mut());
+            ffi::vk::vkDestroyPipeline(self.device, pipeline.pipeline, ptr::null_mut());
         }
         pipeline.pipeline = ptr::null_mut();
     }
@@ -309,24 +275,20 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     unsafe fn add_fence(&self) -> RendererResult<super::VulkanFence> {
         assert!(self.device != ptr::null_mut());
 
-        let fence_info: ffi::vk::VkFenceCreateInfo = ffi::vk::VkFenceCreateInfo{
-            sType : ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        let fence_info: ffi::vk::VkFenceCreateInfo = ffi::vk::VkFenceCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             pNext: ptr::null_mut(),
             flags: 0,
         };
         let mut fence = super::VulkanFence {
             fence: ptr::null_mut(),
-            submitted: false
+            submitted: false,
         };
 
-        let result =  ffi::vk::vkCreateFence(
-            self.device,
-            &fence_info,
-            ptr::null_mut(),
-            &mut fence.fence
-        );
+        let result =
+            ffi::vk::vkCreateFence(self.device, &fence_info, ptr::null_mut(), &mut fence.fence);
         if result != ffi::vk::VkResult_VK_SUCCESS {
-            return Err(VulkanError(result))
+            return Err(VulkanError(result));
         }
         Ok(fence)
     }
@@ -343,15 +305,20 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         let add_info = ffi::vk::VkSemaphoreCreateInfo {
             sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             pNext: ptr::null_mut(),
-            flags: 0
+            flags: 0,
         };
         let mut semaphore = VulkanSemaphore {
             semaphore: ptr::null_mut(),
-            signaled: false
+            signaled: false,
         };
-        let result = ffi::vk::vkCreateSemaphore(self.device, &add_info, ptr::null_mut(), &mut semaphore.semaphore);
+        let result = ffi::vk::vkCreateSemaphore(
+            self.device,
+            &add_info,
+            ptr::null_mut(),
+            &mut semaphore.semaphore,
+        );
         if result != ffi::vk::VkResult_VK_SUCCESS {
-            return Err(VulkanError(result))
+            return Err(VulkanError(result));
         }
         Ok(semaphore)
     }
@@ -365,7 +332,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     }
 
     unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
-        let node_index = desc.node_index;
+        let _node_index = desc.node_index;
         // let mut queue_property = ffi::vk::VkQueueFamilyProperties {
         //     queueFlags
         //     queueCount
@@ -375,7 +342,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    unsafe fn remove_queue(&self, queue: &mut super::VulkanQueue) {
+    unsafe fn remove_queue(&self, _queue: &mut super::VulkanQueue) {
         todo!()
     }
 
@@ -387,7 +354,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    fn add_cmd_pool(&self, desc: &CmdPoolDesc<VulkanAPI>) {
+    fn add_cmd_pool(&self, _desc: &CmdPoolDesc<VulkanAPI>) {
         todo!()
     }
 
@@ -407,7 +374,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    fn remove_render_target(&self, target: &mut VulkanRenderTarget) {
+    fn remove_render_target(&self, _target: &mut VulkanRenderTarget) {
         todo!()
     }
 
@@ -422,5 +389,4 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     fn reset_cmd_pool(&self) {
         todo!()
     }
-
 }

@@ -5,6 +5,7 @@ use crate::{
     ffi,
     types::QueueType,
     vulkan::{
+        types::{GLOBAL_INSTANCE_EXTENSIONS, VulkanSupportedFeatures},
         device::VulkanGPUInfo, VulkanPipeline, VulkanRenderTarget,
         VulkanRenderer, VulkanSemaphore,
     }, CmdPoolDesc, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI,
@@ -17,7 +18,6 @@ use std::{
     os::raw::c_char,
     ptr
 };
-use crate::vulkan::types::{GLOBAL_INSTANCE_EXTENSIONS, VulkanSupportedFeatures};
 
 
 struct QueueFamilyResult {
@@ -247,7 +247,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             active_gpu_properties: None,
             active_gpu_common_info: None,
             device: ptr::null_mut(),
-            features: VulkanSupportedFeatures::None
+            features: VulkanSupportedFeatures::NONE
         };
 
         match init_instance(&mut renderer, desc) {

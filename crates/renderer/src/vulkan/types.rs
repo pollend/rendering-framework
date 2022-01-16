@@ -1,3 +1,4 @@
+
 use bitflags::bitflags;
 use crate::{ffi, types::QueueType};
 
@@ -17,23 +18,23 @@ impl QueueType {
 
 bitflags! {
     pub struct VulkanSupportedFeatures: u32 {
-        const None = 0x0;
-        const RaytracingSupported = 0x01;
-        const YCbCrExtension = 0x02;
-        const KHRSpirv14Extension = 0x04;
-        const KHRAccelerationStructureExtension = 0x08;
-        const KHRRayTracingPipelineExtension = 0x10;
-        const KHRRayQueryExtension = 0x20;
-        const AMDGCNShaderExtension = 0x40;
-        const AMDDrawIndirectCountExtension = 0x80;
-        const DescriptorIndexingExtension = 0x100;
-        const ShaderFloatControlsExtension = 0x200;
-        const BufferDeviceAddressExtension = 0x400;
-        const DeferredHostOperationsExtension = 0x800;
-        const DrawIndirectCountExtension = 0x1000;
-        const DedicatedAllocationExtension = 0x2000;
-        const ExternalMemoryExtension = 0x4000;
-        const DebugMarkerSupport = 0x8000;
+        const NONE = 0x0;
+        const RAY_TRACING_SUPPORTED = 0x01;
+        const Y_CB_CR_EXTENSION = 0x02;
+        const KHR_SPIRV_14_EXTENSION = 0x04;
+        const KHR_ACCELERATION_STRUCTURE_EXTENSION = 0x08;
+        const KHR_RAY_TRACING_PIPELINE_EXTENSION = 0x10;
+        const KHR_RAY_QUERY_EXTENSION = 0x20;
+        const AMD_GCN_SHADEREXTENSION = 0x40;
+        const AMD_DRAW_INDIRECT_COUNT_EXTENSION = 0x80;
+        const DESCRIPTOR_INDEXING_EXTENSION = 0x100;
+        const SHADER_FLOAT_CONTROLS_EXTENSION = 0x200;
+        const BUFFER_DEVICE_ADDRESS_EXTENSION = 0x400;
+        const DEFERRED_HOST_OPERATIONS_EXTENSION = 0x800;
+        const DRAW_INDIRECT_COUNT_EXTENSION = 0x1000;
+        const DEDICATED_ALLOCATION_EXTENSION = 0x2000;
+        const EXTERNAL_MEMORY_EXTENSION = 0x4000;
+        const DEBUG_MARKER_SUPPORT = 0x8000;
     }
 }
 

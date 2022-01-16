@@ -1,14 +1,15 @@
-use crate::{ffi, GPUCommonInfo, RendererResult, GPUSupportedFeatures, ShadingRates};
+use crate::{ffi, GPUCommonInfo, RendererResult, GPUSupportedFeatures, ShadingRates, GPUVendorInfo, GPUPresetLevel};
 use std::{mem, mem::MaybeUninit, ptr};
+use std::ffi::{CStr, CString};
 use log::info;
 use crate::error::RendererError;
 
 pub(in crate::vulkan) struct VulkanGPUInfo {
     physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2,
     physical_memory_properties: ffi::vk::VkPhysicalDeviceMemoryProperties,
+    physical_sub_group_properties: ffi::vk::VkPhysicalDeviceSubgroupProperties,
     physical_device_properties: ffi::vk::VkPhysicalDeviceProperties2,
     queue_family_properties: Vec<ffi::vk::VkQueueFamilyProperties>,
-    subgroup_properties: ffi::vk::VkPhysicalDeviceSubgroupProperties,
     pub device: ffi::vk::VkPhysicalDevice,
 }
 
@@ -16,6 +17,10 @@ impl VulkanGPUInfo {
     pub fn get_physical_features(&self) -> &ffi::vk::VkPhysicalDeviceFeatures {
         return &self.physical_device_features.features;
     }
+
+    // pub fn get_sub_group_properties(&self) -> &ffi::vk::VkPhysicalDeviceProperties {
+    //     return &self.physical_sub_group_properties.properties;
+    // }
 
     pub fn get_device_properties(&self) -> &ffi::vk::VkPhysicalDeviceProperties {
         return &self.physical_device_properties.properties;
@@ -33,7 +38,7 @@ impl VulkanGPUInfo {
         return self.device;
     }
 
-    pub fn to_common(&self) -> GPUCommonInfo {
+    pub unsafe fn to_common(&self) -> GPUCommonInfo {
         let limits = &self.get_device_properties().limits;
         GPUCommonInfo {
             uniform_buffer_alignment: limits.minUniformBufferOffsetAlignment as u32,
@@ -42,8 +47,17 @@ impl VulkanGPUInfo {
             max_vertex_input_bindings: limits.maxVertexInputBindings as u32,
             max_root_signature_dwords: 0,
             wave_lane_count: 0,
-            features: GPUSupportedFeatures::ROVsSupported,
-            shading_rates: ShadingRates::ShadingRateFull
+            features: GPUSupportedFeatures::NONE,
+            shading_rates: ShadingRates::SHADING_RATE_NOT_SUPPORTED,
+            vendor_info: GPUVendorInfo {
+                vendor_id: CString::new(format!("{:#x}", self.get_device_properties().vendorID)).unwrap(),
+                model_id: CString::new(format!("{:#x}", self.get_device_properties().deviceID)).unwrap(),
+                revision_id: CString::new("0x00").unwrap(),
+                preset_level: GPUPresetLevel::GPUPresetNone,
+                gpu_name: CString::from(CStr::from_ptr(self.get_device_properties().deviceName.as_ptr())),
+                gpu_driver_version: Default::default(),
+                gpu_driver_date: Default::default()
+            }
         }
 
     }
@@ -161,7 +175,7 @@ impl VulkanGPUInfo {
                 properties: unsafe { MaybeUninit::zeroed().assume_init() },
             },
             queue_family_properties: vec![],
-            subgroup_properties: ffi::vk::VkPhysicalDeviceSubgroupProperties {
+            physical_sub_group_properties: ffi::vk::VkPhysicalDeviceSubgroupProperties {
                 sType:
                     ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
                 pNext: ptr::null_mut(),
@@ -172,8 +186,8 @@ impl VulkanGPUInfo {
             },
             device,
         };
-        detail.subgroup_properties.pNext = detail.physical_device_properties.pNext;
-        detail.physical_device_properties.pNext = mem::transmute(&mut detail.subgroup_properties);
+        detail.physical_sub_group_properties.pNext = detail.physical_device_properties.pNext;
+        detail.physical_device_properties.pNext = mem::transmute(&mut detail.physical_sub_group_properties);
 
         ffi::vk::vkGetPhysicalDeviceMemoryProperties(
             device,

@@ -6,7 +6,8 @@ use crate::{
     vulkan::VulkanAPI,
 };
 use std::{ffi::CStr};
-use crate::types::{GPUSupportedFeatures, ShadingRates};
+use std::ffi::CString;
+use crate::types::{GPUPresetLevel, GPUSupportedFeatures, ShadingRates};
 
 mod desc;
 mod error;
@@ -17,6 +18,16 @@ pub mod ffi {
     pub use vulkan_sys as vk;
 }
 
+pub struct GPUVendorInfo {
+    vendor_id: CString,
+    model_id: CString,
+    revision_id: CString,
+    preset_level: GPUPresetLevel,
+    gpu_name: CString,
+    gpu_driver_version: CString,
+    gpu_driver_date: CString,
+}
+
 pub struct GPUCommonInfo {
     uniform_buffer_alignment: u32,
     upload_buffer_texture_alignment: u32,
@@ -25,7 +36,8 @@ pub struct GPUCommonInfo {
     max_root_signature_dwords: u32,
     wave_lane_count: u32,
     features: GPUSupportedFeatures,
-    shading_rates: ShadingRates
+    shading_rates: ShadingRates,
+    vendor_info: GPUVendorInfo
 }
 
 pub enum APIType {

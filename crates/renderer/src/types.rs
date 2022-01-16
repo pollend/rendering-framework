@@ -19,36 +19,47 @@ pub enum QueueType {
 
 bitflags! {
     pub struct GPUSupportedFeatures: u32 {
-        const MultiDrawIndirect = 0x01;
-	    const ROVsSupported = 0x02;
-	    const TessellationSupported = 0x04;
-	    const GeometryShaderSupported = 0x08;
-	    const GpuBreadcrumbs = 0x10;
-	    const HDRSupported = 0x20;
+        const NONE = 0x00;
+	    const MULTI_DRAW_INDIRECT = 0x01;
+	    const ROV_SUPPORTED = 0x02;
+	    const TESSELLATION_SUPPORTED = 0x04;
+	    const GEOMETRY_SHADER_SUPPORTED = 0x08;
+	    const GPU_BREADCRUMBS = 0x10;
+	    const HDR_SUPPORTED = 0x20;
     }
+}
+
+pub enum GPUPresetLevel {
+    GPUPresetNone = 0,
+    GPUPresetOffice,    //This means unsupported
+    GPUPresetLow,
+    GPUPresetMedium,
+    GPUPresetHigh,
+    GPUPresetUltra,
+    GPUPresetCount
 }
 
 bitflags! {
      pub struct ShadingRates: u8 {
-        const ShadingRateNotSupported = 0x00;
-        const ShadingRateFull = 0x01;
-        const ShadingRateHalf = 0x02;
-        const ShadingRateQuarter = 0x04;
-        const ShadingRateEighth = 0x08;
-        const ShadingRate1x2 = 0x10;
-        const ShadingRate2x1 = 0x20;
-        const ShadingRate2x4 = 0x40;
-        const ShadingRate4x2 = 0x80;
+        const SHADING_RATE_NOT_SUPPORTED = 0x00;
+        const SHADING_RATE_FULL = 0x01;
+        const SHADING_RATE_HALF = 0x02;
+        const SHADING_RATE_QUARTER = 0x04;
+        const SHADING_RATE_EIGHTH = 0x08;
+        const SHADING_RATE_1X2 = 0x10;
+        const SHADING_RATE_2X1 = 0x20;
+        const SHADING_RATE_2X4 = 0x40;
+        const SHADING_RATE_4X2 = 0x80;
      }
 }
 
 
 bitflags! {
     pub struct QueueFlag: u32 {
-         const QueueFlagNone = 0x0;
-         const QueueFlagDisableGpuTimeout = 0x1;
-         const QueueFlagInitMicroprofile = 0x2;
-         const MaxQueueFlag = 0xFFFFFFFF;
+         const QUEUE_FLAG_NONE = 0x0;
+         const QUEUE_FLAG_DISABLE_GPU_TIMEOUT = 0x1;
+         const QUEUE_FLAG_INIT_MICROPROFILE = 0x2;
+         const MAX_QUEUE_FLAG = 0xFFFFFFFF;
     }
 }
 

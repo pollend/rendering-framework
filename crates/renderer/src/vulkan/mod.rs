@@ -4,10 +4,11 @@ mod renderer;
 mod types;
 
 use crate::{
-    ffi, APIType, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext,
+    ffi,
+    vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
+    APIType, Buffer, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext,
     RenderTarget, Sampler, Semaphore, Shader, Texture,
 };
-use crate::vulkan::types::VulkanSupportedFeatures;
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -25,9 +26,14 @@ impl crate::Api for VulkanAPI {
     type DescriptorIndexMap = VulkanDescriptorIndexMap;
     type Sampler = VulkanSampler;
     type Command = VulkanCommand;
+    type Buffer = VulkanBuffer;
 
     const CURRENT_API: APIType = APIType::Vulkan;
 }
+
+pub struct VulkanBuffer {}
+
+impl Buffer for VulkanBuffer {}
 
 pub struct VulkanCommand {}
 
@@ -183,11 +189,18 @@ impl crate::Pipeline for VulkanPipeline {}
 
 pub struct VulkanRenderer {
     pub(in crate::vulkan) instance: ffi::vk::VkInstance,
+    pub(in crate::vulkan) device: ffi::vk::VkDevice,
+    pub(in crate::vulkan) features: VulkanSupportedFeatures,
+
+    pub(in crate::vulkan) graphics_queue_family_index: u32,
+    pub(in crate::vulkan) transfer_queue_family_index: u32,
+    pub(in crate::vulkan) compute_queue_family_index: u32,
 
     pub(in crate::vulkan) active_gpu: ffi::vk::VkPhysicalDevice,
     pub(in crate::vulkan) active_gpu_properties: Option<ffi::vk::VkPhysicalDeviceProperties>,
-    pub(in crate::vulkan) active_gpu_common_info: Option<GPUCommonInfo>,
+    pub(in crate::vulkan) active_gpu_common_info: Option<Box<GPUCommonInfo>>,
+    pub(in crate::vulkan) linked_node_count: u16,
 
-    pub(in crate::vulkan) device: ffi::vk::VkDevice,
-    pub(in crate::vulkan) features: VulkanSupportedFeatures
+    pub(in crate::vulkan) available_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
+    pub(in crate::vulkan) used_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
 }

@@ -3,11 +3,11 @@
 use crate::{
     desc::{CmdPoolDesc, QueueDesc, RenderDesc},
     error::RendererResult,
+    types::{GPUPresetLevel, GPUSupportedFeatures, ShadingRates},
     vulkan::VulkanAPI,
 };
-use std::{ffi::CStr};
-use std::ffi::CString;
-use crate::types::{GPUPresetLevel, GPUSupportedFeatures, ShadingRates};
+use std::ffi::{CStr, CString};
+use crate::desc::BufferDesc;
 
 mod desc;
 mod error;
@@ -37,7 +37,7 @@ pub struct GPUCommonInfo {
     wave_lane_count: u32,
     features: GPUSupportedFeatures,
     shading_rates: ShadingRates,
-    vendor_info: GPUVendorInfo
+    vendor_info: GPUVendorInfo,
 }
 
 pub enum APIType {
@@ -58,15 +58,22 @@ pub trait Api: Clone + Sized {
     type DescriptorIndexMap: DescriptorIndexMap;
     type Sampler: Sampler;
     type Command: Command;
+    type Buffer: Buffer;
 
     const CURRENT_API: APIType;
 }
 
+pub trait Buffer: Sized  {}
+
 pub trait Renderer<A: Api>: Sized {
+    // internal utilities
+    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
+    unsafe fn drop_buffer(&self, buffer: &mut A::Buffer );
+
     unsafe fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<A::Renderer>;
 
-    fn add_pipeline(&self) -> A::Pipeline;
-    fn drop_pipeline(&self, pipeline: &mut A::Pipeline);
+    unsafe fn add_pipeline(&self) -> A::Pipeline;
+    unsafe fn drop_pipeline(&self, pipeline: &mut A::Pipeline);
 
     unsafe fn add_fence(&self) -> RendererResult<A::Fence>;
     unsafe fn drop_fence(&self, fence: &mut A::Fence);
@@ -78,23 +85,25 @@ pub trait Renderer<A: Api>: Sized {
     unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<A::Queue>;
     unsafe fn remove_queue(&self, queue: &mut A::Queue);
 
-    fn add_swap_chain(&self);
-    fn drop_swap_chain(&self);
+    unsafe fn add_swap_chain(&self);
+    unsafe fn drop_swap_chain(&self);
 
     // command pool functions
-    fn add_cmd_pool(&self, desc: &CmdPoolDesc<A>);
-    fn drop_cmd_pool(&self);
-    fn add_cmd(&self);
-    fn drop_cmd(&self);
+    unsafe fn add_cmd_pool(&self, desc: &CmdPoolDesc<A>);
+    unsafe fn drop_cmd_pool(&self);
+    unsafe fn add_cmd(&self);
+    unsafe fn drop_cmd(&self);
 
-    fn add_render_target(&self) -> RendererResult<A::RenderTarget>;
-    fn remove_render_target(&self, target: &mut A::RenderTarget);
+    unsafe fn add_render_target(&self) -> RendererResult<A::RenderTarget>;
+    unsafe fn remove_render_target(&self, target: &mut A::RenderTarget);
 
-    fn add_root_signature(&self);
-    fn remove_root_signature();
+    unsafe fn add_root_signature(&self);
+    unsafe fn remove_root_signature();
 
     // command buffer functions
-    fn reset_cmd_pool(&self);
+    unsafe fn reset_cmd_pool(&self);
+
+    unsafe fn get_common_info(&self) -> &GPUCommonInfo;
 }
 
 pub trait Command {

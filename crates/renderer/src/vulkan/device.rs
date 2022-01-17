@@ -1,8 +1,14 @@
-use crate::{ffi, GPUCommonInfo, RendererResult, GPUSupportedFeatures, ShadingRates, GPUVendorInfo, GPUPresetLevel};
-use std::{mem, mem::MaybeUninit, ptr};
-use std::ffi::{CStr, CString};
+use crate::{
+    error::RendererError, ffi, GPUCommonInfo, GPUPresetLevel, GPUSupportedFeatures, GPUVendorInfo,
+    RendererResult, ShadingRates,
+};
 use log::info;
-use crate::error::RendererError;
+use std::{
+    ffi::{CStr, CString},
+    mem,
+    mem::MaybeUninit,
+    ptr,
+};
 
 pub(in crate::vulkan) struct VulkanGPUInfo {
     physical_device_features: ffi::vk::VkPhysicalDeviceFeatures2,
@@ -17,10 +23,6 @@ impl VulkanGPUInfo {
     pub fn get_physical_features(&self) -> &ffi::vk::VkPhysicalDeviceFeatures {
         return &self.physical_device_features.features;
     }
-
-    // pub fn get_sub_group_properties(&self) -> &ffi::vk::VkPhysicalDeviceProperties {
-    //     return &self.physical_sub_group_properties.properties;
-    // }
 
     pub fn get_device_properties(&self) -> &ffi::vk::VkPhysicalDeviceProperties {
         return &self.physical_device_properties.properties;
@@ -39,6 +41,7 @@ impl VulkanGPUInfo {
     }
 
     pub unsafe fn to_common(&self) -> GPUCommonInfo {
+        let properties = &self.get_physical_features();
         let limits = &self.get_device_properties().limits;
         GPUCommonInfo {
             uniform_buffer_alignment: limits.minUniformBufferOffsetAlignment as u32,
@@ -47,19 +50,34 @@ impl VulkanGPUInfo {
             max_vertex_input_bindings: limits.maxVertexInputBindings as u32,
             max_root_signature_dwords: 0,
             wave_lane_count: 0,
-            features: GPUSupportedFeatures::NONE,
+            features: {
+                let mut features = GPUSupportedFeatures::NONE;
+                if properties.tessellationShader > 0 {
+                    features |= GPUSupportedFeatures::TESSELLATION_SUPPORTED;
+                }
+                if limits.maxDrawIndirectCount > 0 {
+                    features |= GPUSupportedFeatures::MULTI_DRAW_INDIRECT;
+                }
+                if properties.geometryShader > 0 {
+                    features |= GPUSupportedFeatures::GEOMETRY_SHADER_SUPPORTED;
+                }
+                features
+            },
             shading_rates: ShadingRates::SHADING_RATE_NOT_SUPPORTED,
             vendor_info: GPUVendorInfo {
-                vendor_id: CString::new(format!("{:#x}", self.get_device_properties().vendorID)).unwrap(),
-                model_id: CString::new(format!("{:#x}", self.get_device_properties().deviceID)).unwrap(),
+                vendor_id: CString::new(format!("{:#x}", self.get_device_properties().vendorID))
+                    .unwrap(),
+                model_id: CString::new(format!("{:#x}", self.get_device_properties().deviceID))
+                    .unwrap(),
                 revision_id: CString::new("0x00").unwrap(),
-                preset_level: GPUPresetLevel::GPUPresetNone,
-                gpu_name: CString::from(CStr::from_ptr(self.get_device_properties().deviceName.as_ptr())),
+                preset_level: GPUPresetLevel::PresetNone,
+                gpu_name: CString::from(CStr::from_ptr(
+                    self.get_device_properties().deviceName.as_ptr(),
+                )),
                 gpu_driver_version: Default::default(),
-                gpu_driver_date: Default::default()
-            }
+                gpu_driver_date: Default::default(),
+            },
         }
-
     }
 
     pub unsafe fn select_best_gpu(
@@ -74,7 +92,7 @@ impl VulkanGPUInfo {
             if test_device_properties.deviceType
                 == ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                 && current_device_properties.deviceType
-                != ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+                    != ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
             {
                 return true;
             }
@@ -82,7 +100,7 @@ impl VulkanGPUInfo {
             if test_device_properties.deviceType
                 != ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                 && current_device_properties.deviceType
-                == ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+                    == ffi::vk::VkPhysicalDeviceType_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
             {
                 return false;
             }
@@ -98,14 +116,18 @@ impl VulkanGPUInfo {
 
                 for i in 0..current_memory_properties.memoryHeapCount as usize {
                     let heap = &current_memory_properties.memoryHeaps[i];
-                    if heap.flags & ffi::vk::VkMemoryHeapFlagBits_VK_MEMORY_HEAP_DEVICE_LOCAL_BIT > 0 {
+                    if heap.flags & ffi::vk::VkMemoryHeapFlagBits_VK_MEMORY_HEAP_DEVICE_LOCAL_BIT
+                        > 0
+                    {
                         total_current_vram += heap.size
                     }
                 }
 
                 for i in 0..test_memory_properties.memoryHeapCount as usize {
                     let heap = &test_memory_properties.memoryHeaps[i];
-                    if heap.flags & ffi::vk::VkMemoryHeapFlagBits_VK_MEMORY_HEAP_DEVICE_LOCAL_BIT > 0 {
+                    if heap.flags & ffi::vk::VkMemoryHeapFlagBits_VK_MEMORY_HEAP_DEVICE_LOCAL_BIT
+                        > 0
+                    {
                         total_test_vram += heap.size
                     }
                 }
@@ -187,7 +209,8 @@ impl VulkanGPUInfo {
             device,
         };
         detail.physical_sub_group_properties.pNext = detail.physical_device_properties.pNext;
-        detail.physical_device_properties.pNext = mem::transmute(&mut detail.physical_sub_group_properties);
+        detail.physical_device_properties.pNext =
+            mem::transmute(&mut detail.physical_sub_group_properties);
 
         ffi::vk::vkGetPhysicalDeviceMemoryProperties(
             device,

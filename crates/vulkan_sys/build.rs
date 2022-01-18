@@ -56,18 +56,18 @@ fn main() {
         binding = binding.clang_arg("-DVK_USE_PLATFORM_SCREEN_QNX=1");
     }
 
-    let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
-    let target_pointer_width = env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap();
-    let suffix = match (&*target_family, &*target_pointer_width) {
-        ("windows", "32") => "Lib32",
-        ("windows", "64") => "Lib",
-        _ => "lib",
-    };
-    let lib = match &*target_family {
-        "windows" => "vulkan-1",
-        _ => "vulkan",
-    };
-    println!("cargo:rustc-link-lib={}", lib);
+    // let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
+    // let target_pointer_width = env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap();
+    // let suffix = match (&*target_family, &*target_pointer_width) {
+    //     ("windows", "32") => "Lib32",
+    //     ("windows", "64") => "Lib",
+    //     _ => "lib",
+    // };
+    // let lib = match &*target_family {
+    //     "windows" => "vulkan-1",
+    //     _ => "vulkan",
+    // };
+    // println!("cargo:rustc-link-lib={}", lib);
 
     let bindings = binding
         .clang_arg(format!("-I{}", vulkan_include_dir.to_string_lossy()))

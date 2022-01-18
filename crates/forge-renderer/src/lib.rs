@@ -7,12 +7,13 @@ use crate::{
     vulkan::VulkanAPI,
 };
 use std::ffi::{CStr, CString};
-use crate::desc::BufferDesc;
+use crate::desc::{BufferDesc, RootSignatureDesc, SamplerDesc};
 
 mod desc;
 mod error;
 mod types;
 mod vulkan;
+
 
 pub mod ffi {
     pub use vulkan_sys as vk;
@@ -48,6 +49,7 @@ pub enum APIType {
 pub trait Api: Clone + Sized {
     type RenderContext: RenderContext;
     type Renderer: Renderer<Self>;
+    type RootSignature: RootSignature;
     type Pipeline: Pipeline;
     type Fence: Fence;
     type Semaphore: Semaphore;
@@ -62,6 +64,8 @@ pub trait Api: Clone + Sized {
 
     const CURRENT_API: APIType;
 }
+
+pub trait RootSignature: Sized {}
 
 pub trait Buffer: Sized  {}
 
@@ -96,9 +100,10 @@ pub trait Renderer<A: Api>: Sized {
 
     unsafe fn add_render_target(&self) -> RendererResult<A::RenderTarget>;
     unsafe fn remove_render_target(&self, target: &mut A::RenderTarget);
+    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<A::Sampler>;
 
-    unsafe fn add_root_signature(&self);
-    unsafe fn remove_root_signature();
+    unsafe fn add_root_signature(&self, signature: &RootSignatureDesc<A>) -> RendererResult<A::RootSignature>;
+    unsafe fn remove_root_signature(&self, signature: &mut A::RootSignature);
 
     // command buffer functions
     unsafe fn reset_cmd_pool(&self);

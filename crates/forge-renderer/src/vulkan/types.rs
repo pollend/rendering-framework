@@ -1,5 +1,6 @@
-use crate::{ffi, types::QueueType};
+use crate::{ffi, types::{QueueType, DescriptorType}};
 use bitflags::bitflags;
+use crate::types::FilterType;
 
 impl QueueType {
     pub fn to_vk_queue(&self) -> ffi::vk::VkQueueFlagBits {
@@ -12,6 +13,69 @@ impl QueueType {
                 ffi::vk::VkQueueFlagBits_VK_QUEUE_FLAG_BITS_MAX_ENUM
             }
         }
+    }
+}
+
+impl FilterType {
+    pub fn to_vk_filter(&self) -> u32{
+        match self {
+            FilterType::Nearest => ffi::vk::VkFilter_VK_FILTER_NEAREST,
+            FilterType::Linear =>  ffi::vk::VkFilter_VK_FILTER_LINEAR
+        }
+    }
+}
+
+
+impl DescriptorType {
+    pub fn to_vk_buffer_usage(&self, typed: bool) -> ffi::vk::VkBufferUsageFlags {
+        let mut result: ffi::vk::VkBufferUsageFlags = ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        }
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_RW_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            if typed {
+                result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
+            }
+        }
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            if typed {
+                result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
+            }
+        }
+
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_INDEX_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        }
+
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_VERTEX_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        }
+
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_INDIRECT_BUFFER) {
+            result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+
+        }
+        // #ifdef ENABLE_RAYTRACING
+        // if (usage & DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE)
+        // {
+        //     result |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+        // }
+        // if (usage & DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_BUILD_INPUT)
+        // {
+        //     result |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        // }
+        // if (usage & DESCRIPTOR_TYPE_SHADER_DEVICE_ADDRESS)
+        // {
+        //     result |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        // }
+        // if (usage & DESCRIPTOR_TYPE_SHADER_BINDING_TABLE)
+        // {
+        //     result |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR;
+        // }
+        // #endif
+        return result;
     }
 }
 

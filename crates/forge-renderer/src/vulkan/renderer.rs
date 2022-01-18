@@ -5,7 +5,7 @@ use crate::{check_vk_result, desc::RenderDescImp, error::RendererError::VulkanEr
         MAX_QUEUE_COUNT, MAX_QUEUE_FAMILIES, MAX_QUEUE_FLAGS,
     },
     VulkanPipeline, VulkanRenderTarget, VulkanRenderer, VulkanSemaphore,
-}, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI, BufferDesc};
+}, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, Renderer, RendererResult, VulkanAPI, BufferDesc, RootSignatureDesc, SamplerDesc};
 use log::{error, info, log, warn};
 use std::{
     borrow::Borrow,
@@ -17,6 +17,8 @@ use std::{
     os::raw::c_char,
     ptr,
 };
+use forge_image_format::ImageFormat;
+use crate::types::{DescriptorType, ResourceMemoryUsage};
 use crate::vulkan::VulkanBuffer;
 
 struct QueueFamilyResult {
@@ -189,7 +191,7 @@ unsafe fn init_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Ren
 
     wanted_instance_layers.retain(move |layer| {
         for layer_property in &layer_properties {
-            let layer_name = unsafe { CStr::from_ptr(layer_property.layerName.as_ptr()) };
+            let layer_name = CStr::from_ptr(layer_property.layerName.as_ptr());
             if layer_name.eq(layer.as_c_str()) {
                 return true;
             }
@@ -651,9 +653,30 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<super::VulkanBuffer> {
         assert!(desc.size > 0);
         assert!(self.device != ptr::null_mut());
+        assert!(!self.active_gpu_common_info.is_none());
 
-        let allocated_size = desc.size;
+        let common_info = self.active_gpu_common_info.as_ref().unwrap();
 
+        let mut allocated_size = desc.size;
+
+        if desc.descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+            let min_alignment = common_info.uniform_buffer_alignment;
+            allocated_size = forge_math::round_up(allocated_size, min_alignment as u64);
+        }
+        let mut add_info = ffi::vk::VkBufferCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            pNext: ptr::null_mut(),
+            flags: 0,
+            size: allocated_size,
+            usage: desc.descriptors.to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED),
+            sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
+            queueFamilyIndexCount: 0,
+            pQueueFamilyIndices: ptr::null_mut()
+        };
+
+        if desc.memory_usage == ResourceMemoryUsage::GpuOnly || desc.memory_usage == ResourceMemoryUsage::Unknown {
+            add_info.usage |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        }
 
 
         todo!()
@@ -702,10 +725,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     unsafe fn drop_pipeline(&self, pipeline: &mut super::VulkanPipeline) {
         assert!(self.device != ptr::null_mut());
         assert!(pipeline.pipeline != ptr::null_mut());
-
-        unsafe {
-            ffi::vk::vkDestroyPipeline(self.device, pipeline.pipeline, ptr::null_mut());
-        }
+        ffi::vk::vkDestroyPipeline(self.device, pipeline.pipeline, ptr::null_mut());
         pipeline.pipeline = ptr::null_mut();
     }
 
@@ -815,11 +835,23 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    unsafe fn add_root_signature(&self) {
+    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<super::VulkanSampler> {
+        assert!(self.device != ptr::null_mut());
+
+        // let sampler = ffi::vk::VkSamplerCreateInfo {
+        //
+        // };
         todo!()
     }
 
-    unsafe fn remove_root_signature() {
+
+    unsafe fn add_root_signature(&self, signature: &RootSignatureDesc<VulkanAPI>) -> RendererResult<super::VulkanRootSignature> {
+
+
+        todo!()
+    }
+
+    unsafe fn remove_root_signature(&self, signature: &mut super::VulkanRootSignature) {
         todo!()
     }
 

@@ -3,12 +3,7 @@ mod device;
 mod renderer;
 mod types;
 
-use crate::{
-    ffi,
-    vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
-    APIType, Buffer, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext,
-    RenderTarget, Sampler, Semaphore, Shader, Texture,
-};
+use crate::{ffi, vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS}, APIType, Buffer, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext, RenderTarget, Sampler, Semaphore, Shader, Texture, RootSignature};
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -16,6 +11,7 @@ pub struct VulkanAPI;
 impl crate::Api for VulkanAPI {
     type RenderContext = VulkanRenderContext;
     type Renderer = VulkanRenderer;
+    type RootSignature = VulkanRootSignature;
     type Pipeline = VulkanPipeline;
     type Fence = VulkanFence;
     type Semaphore = VulkanSemaphore;
@@ -29,6 +25,12 @@ impl crate::Api for VulkanAPI {
     type Buffer = VulkanBuffer;
 
     const CURRENT_API: APIType = APIType::Vulkan;
+}
+
+
+pub struct VulkanRootSignature {}
+
+impl RootSignature for VulkanRootSignature {
 }
 
 pub struct VulkanBuffer {}

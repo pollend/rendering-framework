@@ -17,6 +17,38 @@ pub enum QueueType {
     MaxQueueType,
 }
 
+pub enum FilterType {
+    Nearest,
+    Linear
+}
+
+pub enum AddressMode
+{
+    AddressModeMirror,
+    AddressModeRepeat,
+    AddressModeClampToEdge,
+    AddressModeClampToBorder
+}
+
+
+pub enum CompareMode{
+    Never,
+    Less,
+    Equal,
+    LeEqual,
+    Greater,
+    NotEqual,
+    GeEqual,
+    Always
+}
+
+
+pub enum MipMapMode
+{
+    Nearest = 0,
+    Linear
+}
+
 bitflags! {
     pub struct GPUSupportedFeatures: u32 {
         const NONE = 0x00;
@@ -28,6 +60,21 @@ bitflags! {
         const HDR_SUPPORTED = 0x20;
     }
 }
+
+#[derive(PartialEq)]
+pub enum ResourceMemoryUsage {
+    /// No intended memory usage specified.
+    Unknown,
+    /// Memory will be used on device only, no need to be mapped on host.
+    GpuOnly,
+    /// Memory will be mapped on host. Could be used for transfer to device.
+    CpuOnly,
+    /// Memory will be used for frequent (dynamic) updates from host and reads on device.
+    CpuToGpu,
+    /// Memory will be used for writing on device and readback on host.
+    GpuToCpu
+}
+
 
 pub enum GPUPresetLevel {
     PresetNone = 0,

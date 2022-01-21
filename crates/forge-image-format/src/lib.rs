@@ -249,6 +249,33 @@ pub enum ImageFormat {
 
 impl ImageFormat {
 
+    pub fn  is_planer(&self) -> bool
+    {
+        match self {
+            ImageFormat::G8_B8R8_2PLANE_420_UNORM
+            | ImageFormat::G8_B8R8_2PLANE_422_UNORM
+            | ImageFormat::G8_B8_R8_3PLANE_420_UNORM
+            | ImageFormat::G8_B8_R8_3PLANE_422_UNORM
+            | ImageFormat::G8_B8_R8_3PLANE_444_UNORM
+            | ImageFormat::G16_B16R16_2PLANE_420_UNORM
+            | ImageFormat::G16_B16R16_2PLANE_422_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_420_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_422_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_444_UNORM
+            | ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16=> true,
+            _ => false
+        }
+    }
+
     pub fn to_vk_format(&self) -> u32{
         match self {
             ImageFormat::G4R4_UNORM => ffi::vk::VkFormat_VK_FORMAT_R4G4_UNORM_PACK8,

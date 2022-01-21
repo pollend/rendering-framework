@@ -1,6 +1,8 @@
-use crate::{ffi, types::{QueueType, DescriptorType}};
+use crate::{
+    ffi,
+    types::{AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType},
+};
 use bitflags::bitflags;
-use crate::types::FilterType;
 
 impl QueueType {
     pub fn to_vk_queue(&self) -> ffi::vk::VkQueueFlagBits {
@@ -16,19 +18,62 @@ impl QueueType {
     }
 }
 
-impl FilterType {
-    pub fn to_vk_filter(&self) -> u32{
+impl CompareMode {
+    pub fn to_comparison_vk(&self) -> u32 {
         match self {
-            FilterType::Nearest => ffi::vk::VkFilter_VK_FILTER_NEAREST,
-            FilterType::Linear =>  ffi::vk::VkFilter_VK_FILTER_LINEAR
+            CompareMode::Never => ffi::vk::VkCompareOp_VK_COMPARE_OP_NEVER,
+            CompareMode::Less => ffi::vk::VkCompareOp_VK_COMPARE_OP_LESS,
+            CompareMode::Equal => ffi::vk::VkCompareOp_VK_COMPARE_OP_EQUAL,
+            CompareMode::LeEqual => ffi::vk::VkCompareOp_VK_COMPARE_OP_LESS_OR_EQUAL,
+            CompareMode::Greater => ffi::vk::VkCompareOp_VK_COMPARE_OP_GREATER,
+            CompareMode::NotEqual => ffi::vk::VkCompareOp_VK_COMPARE_OP_NOT_EQUAL,
+            CompareMode::GeEqual => ffi::vk::VkCompareOp_VK_COMPARE_OP_GREATER_OR_EQUAL,
+            CompareMode::Always => ffi::vk::VkCompareOp_VK_COMPARE_OP_ALWAYS,
         }
     }
 }
 
+impl FilterType {
+    pub fn to_vk_filter(&self) -> u32 {
+        match self {
+            FilterType::Nearest => ffi::vk::VkFilter_VK_FILTER_NEAREST,
+            FilterType::Linear => ffi::vk::VkFilter_VK_FILTER_LINEAR,
+        }
+    }
+}
+
+impl MipMapMode {
+    pub fn to_vk_map_map_mode(&self) -> u32 {
+        match self {
+            MipMapMode::Nearest => ffi::vk::VkSamplerMipmapMode_VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            MipMapMode::Linear => ffi::vk::VkSamplerMipmapMode_VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        }
+    }
+}
+
+impl AddressMode {
+    pub fn to_vk_address_mode(&self) -> u32 {
+        match self {
+            AddressMode::AddressModeMirror => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+            }
+            AddressMode::AddressModeRepeat => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_REPEAT
+            }
+            AddressMode::AddressModeClampToEdge => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            }
+            AddressMode::AddressModeClampToBorder => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            }
+        }
+    }
+}
 
 impl DescriptorType {
     pub fn to_vk_buffer_usage(&self, typed: bool) -> ffi::vk::VkBufferUsageFlags {
-        let mut result: ffi::vk::VkBufferUsageFlags = ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        let mut result: ffi::vk::VkBufferUsageFlags =
+            ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         if self.contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
             result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
         }
@@ -55,7 +100,6 @@ impl DescriptorType {
 
         if self.contains(DescriptorType::DESCRIPTOR_TYPE_INDIRECT_BUFFER) {
             result |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-
         }
         // #ifdef ENABLE_RAYTRACING
         // if (usage & DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE)

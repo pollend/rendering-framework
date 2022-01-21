@@ -1,23 +1,25 @@
 #![feature(associated_type_defaults)]
 
 use crate::{
-    desc::{CmdPoolDesc, QueueDesc, RenderDesc},
+    desc::{
+        BufferDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,
+        RootSignatureDesc, SamplerDesc,
+    },
     error::RendererResult,
     types::{GPUPresetLevel, GPUSupportedFeatures, ShadingRates},
     vulkan::VulkanAPI,
 };
 use std::ffi::{CStr, CString};
-use crate::desc::{BufferDesc, RootSignatureDesc, SamplerDesc};
 
 mod desc;
 mod error;
 mod types;
 mod vulkan;
 
-
 pub mod ffi {
     pub use vulkan_sys as vk;
 }
+
 
 pub struct GPUVendorInfo {
     vendor_id: CString,
@@ -59,23 +61,27 @@ pub trait Api: Clone + Sized {
     type RenderTarget: RenderTarget;
     type DescriptorIndexMap: DescriptorIndexMap;
     type Sampler: Sampler;
-    type Command: Command;
+    type Command: Command<Self>;
+    type CommandPool: CommandPool;
     type Buffer: Buffer;
 
     const CURRENT_API: APIType;
 }
 
+pub struct BufferBarrier<'a,A: Api> {
+    buffer: &'a A::Buffer
+}
+
+pub trait CommandPool: Sized {}
+
 pub trait RootSignature: Sized {}
 
-pub trait Buffer: Sized  {}
+pub trait Buffer: Sized {}
 
 pub trait Renderer<A: Api>: Sized {
-    // internal utilities
-    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
-    unsafe fn drop_buffer(&self, buffer: &mut A::Buffer );
-
     unsafe fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<A::Renderer>;
 
+    // internal utilities
     unsafe fn add_pipeline(&self) -> A::Pipeline;
     unsafe fn drop_pipeline(&self, pipeline: &mut A::Pipeline);
 
@@ -86,54 +92,65 @@ pub trait Renderer<A: Api>: Sized {
     unsafe fn add_semaphore(&self) -> RendererResult<A::Semaphore>;
     unsafe fn drop_semaphore(&self, semaphore: &mut A::Semaphore) -> RendererResult<()>;
 
-    unsafe fn add_queue(&self, desc: &QueueDesc) -> RendererResult<A::Queue>;
-    unsafe fn remove_queue(&self, queue: &mut A::Queue);
+    unsafe fn add_queue(&mut self, desc: &QueueDesc) -> RendererResult<A::Queue>;
+    unsafe fn remove_queue(&mut self, queue: &mut A::Queue);
 
     unsafe fn add_swap_chain(&self);
     unsafe fn drop_swap_chain(&self);
 
+    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<A::Sampler>;
+    unsafe fn remove_sampler(&self, sampler: &mut A::Sampler);
+
     // command pool functions
-    unsafe fn add_cmd_pool(&self, desc: &CmdPoolDesc<A>);
+    unsafe fn add_cmd_pool(&self, desc: &CmdPoolDesc<A>) -> RendererResult<A::CommandPool>;
     unsafe fn drop_cmd_pool(&self);
     unsafe fn add_cmd(&self);
     unsafe fn drop_cmd(&self);
 
     unsafe fn add_render_target(&self) -> RendererResult<A::RenderTarget>;
     unsafe fn remove_render_target(&self, target: &mut A::RenderTarget);
-    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<A::Sampler>;
 
-    unsafe fn add_root_signature(&self, signature: &RootSignatureDesc<A>) -> RendererResult<A::RootSignature>;
+    unsafe fn add_root_signature(
+        &self,
+        signature: &RootSignatureDesc<A>,
+    ) -> RendererResult<A::RootSignature>;
     unsafe fn remove_root_signature(&self, signature: &mut A::RootSignature);
 
     // command buffer functions
     unsafe fn reset_cmd_pool(&self);
 
     unsafe fn get_common_info(&self) -> &GPUCommonInfo;
+
+    // resource functions
+    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
+    unsafe fn drop_buffer(&self, buffer: &mut A::Buffer);
 }
 
-pub trait Command {
+pub trait Command<A: Api>: Sized {
     // commands
-    fn begin_cmd(&self);
-    fn end_cmd(&self);
-    fn cmd_bind_render_target(&self);
-    fn cmd_set_shading_rate(&self);
-    fn cmd_set_viewport(&self);
-    fn cmd_set_scissor(&self);
-    fn cmd_set_stencil_reference_value(&self);
-    fn cmd_bind_pipeline(&self);
-    fn cmd_bind_descriptor_set(&self);
-    fn cmd_bind_index_buffer(&self);
-    fn cmd_raw(&self);
-    fn cmd_draw_instanced(&self);
-    fn cmd_draw_indexed(&self);
-    fn cmd_draw_indexed_instanced(&self);
-    fn cmd_dispatch(&self);
+    unsafe fn begin_cmd(&mut self) -> RendererResult<()>;
+    unsafe fn end_cmd(&mut self) -> RendererResult<()>;
+    unsafe fn cmd_bind_render_target(&mut self, targets: &[&A::RenderTarget], depth_stencil: Option<&A::RenderTarget>);
+    unsafe fn cmd_set_shading_rate(&self);
+    unsafe fn cmd_set_viewport(&self);
+    unsafe fn cmd_set_scissor(&self);
+    unsafe fn cmd_set_stencil_reference_value(&self);
+    unsafe fn cmd_bind_pipeline(&self);
+    unsafe fn cmd_bind_descriptor_set(&self);
+    unsafe fn cmd_bind_index_buffer(&self);
+    unsafe fn cmd_raw(&self);
+    unsafe fn cmd_draw_instanced(&self, vertex_count: u32, first_vertex: u32, instance_count: u32, first_instance: u32);
+    unsafe fn cmd_draw_indexed(&self, index_count: u32, first_index: u32, first_vertex: i32);
+    unsafe fn cmd_draw_indexed_instanced(&self, index_count: u32, first_index: u32, instance_count: u32, first_instance: u32, first_vertex: i32);
+    unsafe fn cmd_dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
+
+    unsafe fn cmd_update_buffer(&mut self, buffer: &A::Buffer, dst_offset: u64, src_buffer: &A::Buffer, size: u64 );
 
     // transition commands
-    fn cmd_resource_barrier(&self);
+    unsafe fn cmd_resource_barrier(&self);
 
     // virtual textures
-    fn cmd_update_virtual_texture(&self);
+    unsafe fn cmd_update_virtual_texture(&self);
 }
 
 pub trait RenderContext {
@@ -145,12 +162,12 @@ pub trait Texture {}
 pub trait Shader {}
 
 pub trait Queue<A: Api> {
-    fn submit(&self);
-    fn present(&self);
-    fn wait_idle(&self);
-    fn fence_status(&self);
-    fn wait_fence(&self);
-    fn toggle_v_sync(&self);
+    unsafe fn submit(&self, desc: &mut QueueSubmitDesc<A>);
+    unsafe fn present(&self, desc: &mut QueuePresentDesc<A>);
+    unsafe fn wait_idle(&self);
+    unsafe fn fence_status(&self);
+    unsafe fn wait_fence(&self);
+    unsafe fn toggle_v_sync(&self);
 }
 
 pub trait Sampler {}

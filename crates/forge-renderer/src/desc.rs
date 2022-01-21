@@ -1,10 +1,12 @@
 use crate::{
-    types::{QueueFlag, QueuePriority, QueueType},
+    types::{
+        AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueFlag, QueuePriority,
+        QueueType, ResourceMemoryUsage,
+    },
     Api,
 };
 use forge_image_format::ImageFormat;
 use std::ffi::{CStr, CString};
-use crate::types::{AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, ResourceMemoryUsage};
 
 pub struct VulkanRenderDesc {
     pub instance_layers: Vec<CString>,
@@ -31,14 +33,14 @@ pub struct CmdPoolDesc<'a, T: Api> {
 
 pub struct PipelineComputeDesc<'a, T: Api> {
     pub shader: &'a T::Shader,
-    pub signature: &'a T::RootSignature
+    pub signature: &'a T::RootSignature,
 }
 
 pub struct PipelineGraphicsDesc<'a, T: Api> {
-    pub shader: &'a T::Shader
+    pub shader: &'a T::Shader,
 }
 
-pub enum PipelineDescType<'a, T:Api> {
+pub enum PipelineDescType<'a, T: Api> {
     Compute(PipelineComputeDesc<'a, T>),
     Graphics(PipelineGraphicsDesc<'a, T>),
 }
@@ -52,17 +54,19 @@ pub struct RootSignatureDesc<'a, T: Api> {
     shader: &'a Vec<T::Shader>,
 }
 
-pub struct SamplerDesc {
-    min_filter: FilterType,
-    mag_filter: FilterType,
-    mode: MipMapMode,
-    address_u: AddressMode,
-    address_v: AddressMode,
-    address_w: AddressMode,
-    mip_load_bias: f32,
-    max_anisotropy: f32,
-    compareFunc: CompareMode
+pub struct SamplerFormatDesc {}
 
+pub struct SamplerDesc {
+    pub min_filter: FilterType,
+    pub mag_filter: FilterType,
+    pub mode: MipMapMode,
+    pub address_u: AddressMode,
+    pub address_v: AddressMode,
+    pub address_w: AddressMode,
+    pub mip_load_bias: f32,
+    pub max_anisotropy: f32,
+    pub compare_func: CompareMode,
+    // pub format_conversion: SamplerFormatDesc
 }
 
 pub struct BufferDesc {
@@ -75,7 +79,7 @@ pub struct BufferDesc {
 
     pub format: ImageFormat,
 
-    pub memory_usage: ResourceMemoryUsage
+    pub memory_usage: ResourceMemoryUsage,
 }
 
 pub struct QueueDesc {
@@ -83,5 +87,18 @@ pub struct QueueDesc {
     pub flag: QueueFlag,
     pub priority: QueuePriority,
     pub node_index: u32,
-    pub image_format: ImageFormat
+    pub image_format: ImageFormat,
+}
+
+pub struct QueueSubmitDesc<'a, T: Api> {
+    pub cmds: Vec<&'a T::Command>,
+    pub signal_fences: Vec<&'a T::Fence>,
+    pub wait_semaphores: Vec<&'a mut T::Semaphore>,
+    pub signal_semaphores: Vec<&'a mut T::Semaphore>,
+    pub submit_done: bool,
+}
+
+// <'a, T: Api>
+pub struct QueuePresentDesc<'a, T: Api> {
+    pub cmds: &'a T::Command
 }

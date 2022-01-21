@@ -1,9 +1,18 @@
+mod command;
 mod desc;
 mod device;
+mod queue;
 mod renderer;
 mod types;
 
-use crate::{ffi, vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS}, APIType, Buffer, Command, DescriptorIndexMap, Fence, GPUCommonInfo, Queue, RenderContext, RenderTarget, Sampler, Semaphore, Shader, Texture, RootSignature};
+use crate::{
+    ffi,
+    types::QueueType,
+    vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
+    APIType, Buffer, Command, CommandPool, DescriptorIndexMap, Fence, GPUCommonInfo, Queue,
+    RenderContext, RenderTarget, RootSignature, Sampler, Semaphore, Shader, Texture,
+};
+use std::{os::raw::c_float, sync::Mutex};
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -22,91 +31,30 @@ impl crate::Api for VulkanAPI {
     type DescriptorIndexMap = VulkanDescriptorIndexMap;
     type Sampler = VulkanSampler;
     type Command = VulkanCommand;
+    type CommandPool = VulkanCommandPool;
     type Buffer = VulkanBuffer;
 
     const CURRENT_API: APIType = APIType::Vulkan;
 }
 
+pub struct VulkanCommandPool {
+    pub(in crate::vulkan) cmd_pool: ffi::vk::VkCommandPool,
+}
+
+impl CommandPool for VulkanCommandPool {}
 
 pub struct VulkanRootSignature {}
 
-impl RootSignature for VulkanRootSignature {
-}
+impl RootSignature for VulkanRootSignature {}
 
 pub struct VulkanBuffer {}
 
 impl Buffer for VulkanBuffer {}
 
-pub struct VulkanCommand {}
-
-impl Command for VulkanCommand {
-    fn begin_cmd(&self) {
-        todo!()
-    }
-
-    fn end_cmd(&self) {
-        todo!()
-    }
-
-    fn cmd_bind_render_target(&self) {
-        todo!()
-    }
-
-    fn cmd_set_shading_rate(&self) {
-        todo!()
-    }
-
-    fn cmd_set_viewport(&self) {
-        todo!()
-    }
-
-    fn cmd_set_scissor(&self) {
-        todo!()
-    }
-
-    fn cmd_set_stencil_reference_value(&self) {
-        todo!()
-    }
-
-    fn cmd_bind_pipeline(&self) {
-        todo!()
-    }
-
-    fn cmd_bind_descriptor_set(&self) {
-        todo!()
-    }
-
-    fn cmd_bind_index_buffer(&self) {
-        todo!()
-    }
-
-    fn cmd_raw(&self) {
-        todo!()
-    }
-
-    fn cmd_draw_instanced(&self) {
-        todo!()
-    }
-
-    fn cmd_draw_indexed(&self) {
-        todo!()
-    }
-
-    fn cmd_draw_indexed_instanced(&self) {
-        todo!()
-    }
-
-    fn cmd_dispatch(&self) {
-        todo!()
-    }
-
-    fn cmd_resource_barrier(&self) {
-        todo!()
-    }
-
-    fn cmd_update_virtual_texture(&self) {
-        todo!()
-    }
+pub struct VulkanCommand {
+    cmd_buf: ffi::vk::VkCommandBuffer,
+    active_render_pass: ffi::vk::VkRenderPass,
+    bound_pipeline_layout: ffi::vk::VkPipelineLayout,
 }
 
 pub struct VulkanRenderContext {
@@ -121,7 +69,9 @@ pub struct VulkanRenderTarget {}
 
 impl RenderTarget for VulkanRenderTarget {}
 
-pub struct VulkanSampler {}
+pub struct VulkanSampler {
+    sampler: ffi::vk::VkSampler,
+}
 
 impl Sampler for VulkanSampler {}
 
@@ -138,38 +88,23 @@ pub struct VulkanTexture {}
 impl Texture for VulkanTexture {}
 
 pub struct VulkanSemaphore {
-    semaphore: ffi::vk::VkSemaphore,
-    signaled: bool,
+    pub semaphore: ffi::vk::VkSemaphore,
+    pub current_node: u32,
+    pub signaled: bool,
 }
 
 impl Semaphore for VulkanSemaphore {}
 
-pub struct VulkanQueue {}
+pub struct VulkanQueue {
+    pub(in crate::vulkan) queue: ffi::vk::VkQueue,
+    pub(in crate::vulkan) submission_mutex: Mutex<()>,
 
-impl Queue<VulkanAPI> for VulkanQueue {
-    fn submit(&self) {
-        todo!()
-    }
+    // timestamp_period: f32,
+    pub(in crate::vulkan) family_index: u32,
+    pub(in crate::vulkan) queue_index: u32,
+    pub(in crate::vulkan) queue_flag: ffi::vk::VkQueueFlags,
 
-    fn present(&self) {
-        todo!()
-    }
-
-    fn wait_idle(&self) {
-        todo!()
-    }
-
-    fn fence_status(&self) {
-        todo!()
-    }
-
-    fn wait_fence(&self) {
-        todo!()
-    }
-
-    fn toggle_v_sync(&self) {
-        todo!()
-    }
+    pub(in crate::vulkan) queue_type: QueueType,
 }
 
 pub struct VulkanFence {

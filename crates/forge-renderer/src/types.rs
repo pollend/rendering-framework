@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum DescriptorUpdateFrequency {
     DescriptorUpdateFreqNone = 0,
     DescriptorUpdateFreqPerFrame,
@@ -9,7 +9,7 @@ pub enum DescriptorUpdateFrequency {
     DescriptorUpdateFreqCount,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum QueueType {
     QueueTypeGraphics = 0,
     QueueTypeTransfer,
@@ -17,21 +17,22 @@ pub enum QueueType {
     MaxQueueType,
 }
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum FilterType {
     Nearest,
-    Linear
+    Linear,
 }
 
-pub enum AddressMode
-{
+#[derive(PartialEq, Copy, Clone)]
+pub enum AddressMode {
     AddressModeMirror,
     AddressModeRepeat,
     AddressModeClampToEdge,
-    AddressModeClampToBorder
+    AddressModeClampToBorder,
 }
 
-
-pub enum CompareMode{
+#[derive(PartialEq, Copy, Clone)]
+pub enum CompareMode {
     Never,
     Less,
     Equal,
@@ -39,14 +40,46 @@ pub enum CompareMode{
     Greater,
     NotEqual,
     GeEqual,
-    Always
+    Always,
+}
+
+#[derive(PartialEq, Copy, Clone)]
+pub enum MipMapMode {
+    Nearest = 0,
+    Linear,
 }
 
 
-pub enum MipMapMode
-{
-    Nearest = 0,
-    Linear
+bitflags! {
+    pub struct ResourceState: u32 {
+        const VERTEX_AND_CONSTANT_BUFFER = 0x1;
+        const INDEX_BUFFER = 0x2;
+        const RENDER_TARGET = 0x4;
+        const UNORDERED_ACCESS = 0x8;
+        const DEPTH_WRITE = 0x10;
+        const DEPTH_READ = 0x20;
+        const NON_PIXEL_SHADER_RESOURCE = 0x40;
+        const PIXEL_SHADER_RESOURCE = 0x80;
+        const STREAM_OUT = 0x100;
+        const INDIRECT_ARGUMENT = 0x200;
+        const COPY_DEST = 0x400;
+        const COPY_SOURCE = 0x800;
+        const PRESENT = 0x1000;
+        const COMMON = 0x2000;
+        const RAYTRACING_ACCELERATION_STRUCTURE = 0x4000;
+        const SHADING_RATE_SOURCE = 0x8000;
+
+        const GENERIC_READ =
+            Self::VERTEX_AND_CONSTANT_BUFFER.bits |
+            Self::INDEX_BUFFER.bits |
+            Self::NON_PIXEL_SHADER_RESOURCE.bits |
+            Self::PIXEL_SHADER_RESOURCE.bits |
+            Self::INDIRECT_ARGUMENT.bits |
+            Self::COPY_SOURCE.bits;
+
+        const SHADER_RESOURCE = Self::NON_PIXEL_SHADER_RESOURCE.bits | Self::PIXEL_SHADER_RESOURCE.bits;
+
+    }
 }
 
 bitflags! {
@@ -72,9 +105,8 @@ pub enum ResourceMemoryUsage {
     /// Memory will be used for frequent (dynamic) updates from host and reads on device.
     CpuToGpu,
     /// Memory will be used for writing on device and readback on host.
-    GpuToCpu
+    GpuToCpu,
 }
-
 
 pub enum GPUPresetLevel {
     PresetNone = 0,
@@ -108,7 +140,6 @@ bitflags! {
          const MAX_QUEUE_FLAG = 0xFFFFFFFF;
     }
 }
-
 
 bitflags! {
     pub struct DescriptorType: u32 {

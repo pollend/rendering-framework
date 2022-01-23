@@ -7,6 +7,7 @@ use crate::{
 };
 use forge_image_format::ImageFormat;
 use std::ffi::{CStr, CString};
+use raw_window_handle::HasRawWindowHandle;
 
 pub struct VulkanRenderDesc {
     pub instance_layers: Vec<CString>,
@@ -24,6 +25,15 @@ pub enum RenderDescImp {
 
 pub struct RenderDesc {
     pub imp: RenderDescImp,
+}
+
+pub struct SwapChainDesc<'a> {
+    pub window_handle: &'a HasRawWindowHandle
+}
+
+pub struct CmdDesc<'a, T: Api> {
+    pub cmd_pool: &'a T::CommandPool<'a>,
+    pub secondary: bool
 }
 
 pub struct CmdPoolDesc<'a, T: Api> {
@@ -90,15 +100,16 @@ pub struct QueueDesc {
     pub image_format: ImageFormat,
 }
 
-pub struct QueueSubmitDesc<'a, T: Api> {
-    pub cmds: Vec<&'a T::Command>,
-    pub signal_fences: Vec<&'a T::Fence>,
+pub struct QueueSubmitDesc<'a,'b, T: Api> {
+    pub cmds: Vec<&'a T::Command<'b>>,
+    pub signal_fences: Option<&'a mut T::Fence>,
     pub wait_semaphores: Vec<&'a mut T::Semaphore>,
     pub signal_semaphores: Vec<&'a mut T::Semaphore>,
     pub submit_done: bool,
 }
 
-// <'a, T: Api>
 pub struct QueuePresentDesc<'a, T: Api> {
-    pub cmds: &'a T::Command
+    pub wait_semaphores: Vec<&'a mut T::Semaphore>,
+    pub index: u8,
+    pub submit_done: bool,
 }

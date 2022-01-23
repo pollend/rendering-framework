@@ -1,8 +1,12 @@
-use crate::{error::RendererError::VulkanError, ffi, vulkan::VulkanCommand, Command, RendererResult, RenderTarget, VulkanAPI};
+use crate::{
+    error::RendererError::VulkanError,
+    ffi,
+    vulkan::{VulkanBuffer, VulkanCommand, VulkanRenderTarget},
+    Command, RenderTarget, RendererResult, VulkanAPI,
+};
 use std::ptr;
-use crate::vulkan::{VulkanBuffer, VulkanRenderTarget};
 
-impl Command<VulkanAPI> for VulkanCommand {
+impl<'a> Command<VulkanAPI> for VulkanCommand<'a> {
     unsafe fn begin_cmd(&mut self) -> RendererResult<()> {
         assert!(self.cmd_buf != ptr::null_mut());
 
@@ -34,17 +38,19 @@ impl Command<VulkanAPI> for VulkanCommand {
             return Err(VulkanError(result));
         }
         Ok(())
-
     }
 
-    unsafe fn cmd_bind_render_target(&mut self, targets: &[&VulkanRenderTarget], depth_stencil: Option<&VulkanRenderTarget>) {
+    unsafe fn cmd_bind_render_target(
+        &mut self,
+        targets: &[&VulkanRenderTarget],
+        depth_stencil: Option<&VulkanRenderTarget>,
+    ) {
         assert!(self.cmd_buf != ptr::null_mut());
 
         if self.cmd_buf != ptr::null_mut() {
             ffi::vk::vkCmdEndRenderPass(self.cmd_buf);
             self.active_render_pass = ptr::null_mut();
         }
-
 
         todo!()
     }
@@ -81,9 +87,21 @@ impl Command<VulkanAPI> for VulkanCommand {
         todo!()
     }
 
-    unsafe fn cmd_draw_instanced(&self, vertex_count: u32, first_vertex: u32, instance_count: u32, first_instance: u32) {
+    unsafe fn cmd_draw_instanced(
+        &self,
+        vertex_count: u32,
+        first_vertex: u32,
+        instance_count: u32,
+        first_instance: u32,
+    ) {
         assert!(self.cmd_buf != ptr::null_mut());
-        ffi::vk::vkCmdDraw(self.cmd_buf, vertex_count, first_vertex, instance_count, first_instance);
+        ffi::vk::vkCmdDraw(
+            self.cmd_buf,
+            vertex_count,
+            first_vertex,
+            instance_count,
+            first_instance,
+        );
     }
 
     unsafe fn cmd_draw_indexed(&self, index_count: u32, first_index: u32, first_vertex: i32) {
@@ -91,9 +109,23 @@ impl Command<VulkanAPI> for VulkanCommand {
         ffi::vk::vkCmdDrawIndexed(self.cmd_buf, index_count, 1, first_index, first_vertex, 0);
     }
 
-    unsafe fn cmd_draw_indexed_instanced(&self, index_count: u32, first_index: u32, instance_count: u32, first_instance: u32, first_vertex: i32) {
+    unsafe fn cmd_draw_indexed_instanced(
+        &self,
+        index_count: u32,
+        first_index: u32,
+        instance_count: u32,
+        first_instance: u32,
+        first_vertex: i32,
+    ) {
         assert!(self.cmd_buf != ptr::null_mut());
-        ffi::vk::vkCmdDrawIndexed(self.cmd_buf, index_count, instance_count, first_index, first_vertex, first_instance);
+        ffi::vk::vkCmdDrawIndexed(
+            self.cmd_buf,
+            index_count,
+            instance_count,
+            first_index,
+            first_vertex,
+            first_instance,
+        );
     }
 
     unsafe fn cmd_dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {
@@ -101,7 +133,13 @@ impl Command<VulkanAPI> for VulkanCommand {
         ffi::vk::vkCmdDispatch(self.cmd_buf, group_count_x, group_count_y, group_count_z);
     }
 
-    unsafe fn cmd_update_buffer(&mut self, buffer: &VulkanBuffer, dst_offset: u64, src_buffer: &VulkanBuffer, size: u64) {
+    unsafe fn cmd_update_buffer(
+        &mut self,
+        buffer: &VulkanBuffer,
+        dst_offset: u64,
+        src_buffer: &VulkanBuffer,
+        size: u64,
+    ) {
         todo!()
     }
 

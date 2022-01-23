@@ -10,6 +10,13 @@ pub enum DescriptorUpdateFrequency {
 }
 
 #[derive(PartialEq, Copy, Clone)]
+pub enum FenceStatus {
+    Complete,
+    Incomplete,
+    NotSubmitted,
+}
+
+#[derive(PartialEq, Copy, Clone)]
 pub enum QueueType {
     QueueTypeGraphics = 0,
     QueueTypeTransfer,
@@ -48,7 +55,6 @@ pub enum MipMapMode {
     Nearest = 0,
     Linear,
 }
-
 
 bitflags! {
     pub struct ResourceState: u32 {

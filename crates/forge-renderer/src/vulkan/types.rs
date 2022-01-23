@@ -54,18 +54,10 @@ impl MipMapMode {
 impl AddressMode {
     pub fn to_vk_address_mode(&self) -> u32 {
         match self {
-            AddressMode::AddressModeMirror => {
-                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
-            }
-            AddressMode::AddressModeRepeat => {
-                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_REPEAT
-            }
-            AddressMode::AddressModeClampToEdge => {
-                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-            }
-            AddressMode::AddressModeClampToBorder => {
-                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
-            }
+            AddressMode::AddressModeMirror => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
+            AddressMode::AddressModeRepeat => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            AddressMode::AddressModeClampToEdge => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            AddressMode::AddressModeClampToBorder => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
         }
     }
 }

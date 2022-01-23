@@ -19,7 +19,7 @@ use crate::{
 use forge_image_format::ImageFormat;
 use log::{error, info, log, warn};
 use std::{
-    borrow::Borrow,
+    borrow::{Borrow, BorrowMut},
     cmp::{min, Ordering},
     collections::HashSet,
     ffi::{c_void, CStr, CString},
@@ -27,9 +27,12 @@ use std::{
     mem::MaybeUninit,
     os::raw::c_char,
     ptr,
+    sync::{Arc, Mutex},
     thread::sleep,
     u32,
 };
+use crate::desc::CmdDesc;
+use crate::vulkan::VulkanCommand;
 
 struct QueueFamilyResult {
     properties: ffi::vk::VkQueueFamilyProperties,
@@ -702,8 +705,8 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         todo!()
     }
 
-    unsafe fn init(_name: &CStr, desc: &RenderDesc) -> RendererResult<VulkanRenderer> {
-        let mut renderer = VulkanRenderer {
+    unsafe fn init(_name: &CStr, desc: &RenderDesc) -> RendererResult<Arc<VulkanRenderer>> {
+        let mut renderer = Arc::new_cyclic(|me| VulkanRenderer {
             instance: ptr::null_mut(),
             active_gpu: ptr::null_mut(),
             active_gpu_properties: None,
@@ -716,19 +719,24 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             graphics_queue_family_index: 0,
             transfer_queue_family_index: 0,
             compute_queue_family_index: 0,
-        };
+            me: me.clone(),
+        });
+        let mut mut_render = Arc::get_mut(&mut renderer).unwrap();
         // initialize instance
-        init_instance(&mut renderer, desc)?;
+        init_instance(&mut mut_render, desc)?;
 
         // initialize device
-        init_device(&mut renderer, desc)?;
+        init_device(&mut mut_render, desc)?;
+        let family_queue =
+            util_find_queue_family_index(&mut_render, 0, QueueType::QueueTypeGraphics);
+        let compute_queue =
+            util_find_queue_family_index(&mut_render, 0, QueueType::QueueTypeCompute);
+        let transfer_queue =
+            util_find_queue_family_index(&mut_render, 0, QueueType::QueueTypeTransfer);
 
-        renderer.graphics_queue_family_index =
-            util_find_queue_family_index(&renderer, 0, QueueType::QueueTypeGraphics).family_index;
-        renderer.graphics_queue_family_index =
-            util_find_queue_family_index(&renderer, 0, QueueType::QueueTypeCompute).family_index;
-        renderer.graphics_queue_family_index =
-            util_find_queue_family_index(&renderer, 0, QueueType::QueueTypeTransfer).family_index;
+        mut_render.graphics_queue_family_index = family_queue.family_index;
+        mut_render.graphics_queue_family_index = compute_queue.family_index;
+        mut_render.graphics_queue_family_index = transfer_queue.family_index;
 
         Ok(renderer)
     }
@@ -753,6 +761,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             flags: 0,
         };
         let mut fence = super::VulkanFence {
+            render: self.me.clone().upgrade().unwrap(),
             fence: ptr::null_mut(),
             submitted: false,
         };
@@ -765,13 +774,6 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(fence)
     }
 
-    unsafe fn drop_fence(&self, fence: &mut super::VulkanFence) {
-        assert!(fence.fence != ptr::null_mut());
-        assert!(self.device != ptr::null_mut());
-        ffi::vk::vkDestroyFence(self.device, fence.fence, ptr::null_mut());
-        fence.fence = ptr::null_mut();
-    }
-
     unsafe fn add_semaphore(&self) -> RendererResult<super::VulkanSemaphore> {
         assert!(self.device != ptr::null_mut());
         let add_info = ffi::vk::VkSemaphoreCreateInfo {
@@ -780,7 +782,9 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             flags: 0,
         };
         let mut semaphore = VulkanSemaphore {
+            render: self.me.clone().upgrade().unwrap(),
             semaphore: ptr::null_mut(),
+            current_node: 0,
             signaled: false,
         };
         let result = ffi::vk::vkCreateSemaphore(
@@ -795,28 +799,23 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(semaphore)
     }
 
-    unsafe fn drop_semaphore(&self, semaphore: &mut super::VulkanSemaphore) -> RendererResult<()> {
-        assert!(semaphore.semaphore != ptr::null_mut());
-        assert!(self.device != ptr::null_mut());
-        ffi::vk::vkDestroySemaphore(self.device, semaphore.semaphore, ptr::null_mut());
-        semaphore.semaphore = ptr::null_mut();
-        Ok(())
-    }
-
     unsafe fn add_queue(&mut self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
-        let node_index = desc.node_index;
+        let node_index = 0;
         let queue_result = util_find_queue_family_index(self, node_index, desc.queue_type);
         self.used_queue_count[node_index as usize][queue_result.properties.queueFlags as usize] +=
             1;
 
         let mut result = VulkanQueue {
+            render: self.me.clone().upgrade().unwrap(),
             queue: ptr::null_mut(),
 
+            submission_mutex: Mutex::new(()),
             family_index: queue_result.family_index,
             queue_index: queue_result.queue_index,
             queue_flag: queue_result.properties.queueFlags,
 
             queue_type: desc.queue_type,
+            node_index: desc.node_index,
         };
 
         ffi::vk::vkGetDeviceQueue(
@@ -829,12 +828,6 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(result)
     }
 
-    unsafe fn remove_queue(&mut self, queue: &mut super::VulkanQueue) {
-        // let mut node_index: u32 = queue.queue_index;
-        // let mut queue_flags = queue.queue
-        // self.used_queue_count[]
-    }
-
     unsafe fn add_swap_chain(&self) {
         todo!()
     }
@@ -842,35 +835,57 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
     unsafe fn drop_swap_chain(&self) {
         todo!()
     }
-
-    unsafe fn add_cmd_pool(
+    unsafe fn add_cmd_pool<'a>(
         &self,
-        desc: &CmdPoolDesc<VulkanAPI>,
-    ) -> RendererResult<VulkanCommandPool> {
+        desc: &CmdPoolDesc<'a, VulkanAPI>,
+    ) -> RendererResult<VulkanCommandPool<'a>> {
         assert!(self.device != ptr::null_mut());
 
         let mut cmd_pool = VulkanCommandPool {
+            renderer: self.me.clone().upgrade().unwrap(),
             cmd_pool: ptr::null_mut(),
+            queue: desc.queue
         };
         let mut add_info = ffi::vk::VkCommandPoolCreateInfo {
             sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             pNext: ptr::null_mut(),
-            flags: 0,
-            queueFamilyIndex: 0,
+            flags: (if desc.transient {
+                ffi::vk::VkCommandPoolCreateFlagBits_VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
+            } else {
+                0
+            }),
+            queueFamilyIndex: desc.queue.family_index,
         };
+        let result = ffi::vk::vkCreateCommandPool(self.device, &mut add_info, ptr::null_mut(), &mut cmd_pool.cmd_pool);
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            return  Err(VulkanError(result))
+        }
         Ok(cmd_pool)
     }
 
-    unsafe fn drop_cmd_pool(&self) {
-        todo!()
-    }
+    unsafe fn add_cmd<'a>(&self, desc: &mut CmdDesc<'a, VulkanAPI>) -> RendererResult<VulkanCommand<'a>> {
 
-    unsafe fn add_cmd(&self) {
-        todo!()
-    }
+        let mut cmd = VulkanCommand {
+            renderer: self.me.clone().upgrade().unwrap(),
+            cmd_buf: ptr::null_mut(),
+            active_render_pass: ptr::null_mut(),
+            bound_pipeline_layout: ptr::null_mut(),
+            pool: desc.cmd_pool
+        };
 
-    unsafe fn drop_cmd(&self) {
-        todo!()
+        let mut alloc_info = ffi::vk::VkCommandBufferAllocateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            pNext: ptr::null_mut(),
+            commandPool: desc.cmd_pool.cmd_pool,
+            level: if desc.secondary { ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_SECONDARY } else {ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_PRIMARY},
+            commandBufferCount: 1
+        };
+        let result = ffi::vk::vkAllocateCommandBuffers(self.device, ptr::null_mut(), &mut cmd.cmd_buf);
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            return  Err(VulkanError(result))
+        }
+
+        Ok(cmd)
     }
 
     unsafe fn add_render_target(&self) -> RendererResult<VulkanRenderTarget> {
@@ -915,6 +930,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             unnormalizedCoordinates: ffi::vk::VK_FALSE,
         };
         let mut sampler = VulkanSampler {
+            renderer: self.me.clone().upgrade().unwrap(),
             sampler: ptr::null_mut(),
         };
 
@@ -928,13 +944,6 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             return Err(VulkanError(result));
         }
         Ok(sampler)
-    }
-
-    unsafe fn remove_sampler(&self, sampler: &mut super::VulkanSampler) {
-        assert!(sampler.sampler != ptr::null_mut());
-        assert!(self.device != ptr::null_mut());
-        ffi::vk::vkDestroySampler(self.device, sampler.sampler, ptr::null_mut());
-        sampler.sampler = ptr::null_mut();
     }
 
     unsafe fn add_root_signature(

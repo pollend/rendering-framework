@@ -7,20 +7,22 @@ mod renderer;
 mod types;
 
 use crate::{
+    error::RendererError::VulkanError,
     ffi,
     types::QueueType,
     vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
     APIType, Buffer, Command, CommandPool, DescriptorIndexMap, Fence, FenceStatus, GPUCommonInfo,
     Queue, RenderContext, RenderTarget, RendererResult, RootSignature, Sampler, Semaphore, Shader,
-    Texture,
+    SwapChain, Texture,
 };
 use std::{
+    f32::consts::E,
     os::{linux::raw::stat, raw::c_float},
     ptr, sync,
     sync::{Arc, Mutex},
 };
-use std::f32::consts::E;
-use crate::error::RendererError::VulkanError;
+use forge_image_format::ImageFormat;
+use crate::types::SampleCount;
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -41,9 +43,14 @@ impl crate::Api for VulkanAPI {
     type Command<'a> = VulkanCommand<'a>;
     type CommandPool<'a> = VulkanCommandPool<'a>;
     type Buffer = VulkanBuffer;
+    type SwapChain = VulkanSwapChain;
 
     const CURRENT_API: APIType = APIType::Vulkan;
 }
+
+pub struct VulkanSwapChain {}
+
+impl SwapChain for VulkanSwapChain {}
 
 pub struct VulkanCommandPool<'a> {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
@@ -121,7 +128,7 @@ impl<'a> Drop for VulkanCommand<'a> {
                         renderer.device,
                         self.pool.cmd_pool,
                         1,
-                        &mut self.cmd_buf
+                        &mut self.cmd_buf,
                     );
                     self.cmd_buf = ptr::null_mut();
                 }
@@ -138,9 +145,27 @@ pub struct VulkanRenderContext {
 
 impl RenderContext for VulkanRenderContext {}
 
-pub struct VulkanRenderTarget {}
+pub struct VulkanRenderTarget {
+    pub(in crate::vulkan) descriptor: ffi::vk::VkImageView,
+    pub(in crate::vulkan) slice_descriptors: Vec<ffi::vk::VkImageView>,
+    pub(in crate::vulkan) id: u32,
 
-impl RenderTarget for VulkanRenderTarget {}
+    pub(in crate::vulkan) array_size: u32,
+    pub(in crate::vulkan) depth: u32,
+    pub(in crate::vulkan) width: u32,
+    pub(in crate::vulkan) height: u32,
+    pub(in crate::vulkan) descriptors: u32,
+    pub(in crate::vulkan) mip_levels: u32,
+    pub(in crate::vulkan) sample_quality: u32,
+    pub(in crate::vulkan) format: ImageFormat,
+    pub(in crate::vulkan) sample_count: SampleCount,
+    // vr_multiview: bool,
+    // VRFoveatedRendering: bool,
+
+}
+
+impl RenderTarget for VulkanRenderTarget {
+}
 
 pub struct VulkanSampler {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
@@ -175,7 +200,18 @@ pub struct VulkanShader {}
 
 impl Shader for VulkanShader {}
 
-pub struct VulkanTexture {}
+pub struct VulkanTexture {
+    /// Opaque handle used by shaders for doing read/write operations on the texture
+    pub vk_srv_descriptor: ffi::vk::VkImageView,
+    /// Opaque handle used by shaders for doing read/write operations on the texture
+    pub vk_uav_descriptors: Vec<ffi::vk::VkImageView>,
+    /// Opaque handle used by shaders for doing read/write operations on the texture
+    pub vk_srv_stencil_descriptor: ffi::vk::VkImageView,
+    /// Native handle of the underlying resource
+    pub vk_image: ffi::vk::VkImageView,
+
+    pub own_image: bool,
+}
 
 impl Texture for VulkanTexture {}
 

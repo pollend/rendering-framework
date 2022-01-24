@@ -56,6 +56,26 @@ pub enum MipMapMode {
     Linear,
 }
 
+pub enum IndirectArgumentType {
+    Draw,
+    DrawIndex,
+    Dispatch,
+    VertexBuffer,
+    IndexBuffer,
+    Constant,
+    DescriptorTable, // only for vulkan
+    Pipeline, // only for vulkan now, probably will add to dx when it comes to xbox
+    ConstantBufferView, // only for dx
+    ShaderResourceView, // only for dx
+    UnorderedAccessView, // only for dx
+    // #if defined(METAL)
+    // INDIRECT_COMMAND_BUFFER,            // metal ICB
+    // INDIRECT_COMMAND_BUFFER_RESET,      // metal ICB reset
+    // INDIRECT_COMMAND_BUFFER_OPTIMIZE    // metal ICB optimization
+    // #endif
+    // } IndirectArgumentType;
+}
+
 bitflags! {
     pub struct ResourceState: u32 {
         const VERTEX_AND_CONSTANT_BUFFER = 0x1;
@@ -84,7 +104,6 @@ bitflags! {
             Self::COPY_SOURCE.bits;
 
         const SHADER_RESOURCE = Self::NON_PIXEL_SHADER_RESOURCE.bits | Self::PIXEL_SHADER_RESOURCE.bits;
-
     }
 }
 
@@ -100,7 +119,7 @@ bitflags! {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum ResourceMemoryUsage {
     /// No intended memory usage specified.
     Unknown,
@@ -124,6 +143,16 @@ pub enum GPUPresetLevel {
     PresetCount,
 }
 
+
+#[derive(PartialEq, Copy, Clone)]
+pub enum SampleCount {
+    SampleCount1 = 1,
+    SampleCount2 = 2,
+    SampleCount4 = 4,
+    SampleCount8 = 8,
+    SampleCount16 = 16,
+}
+
 bitflags! {
      pub struct ShadingRates: u8 {
         const SHADING_RATE_NOT_SUPPORTED = 0x00;
@@ -144,6 +173,46 @@ bitflags! {
          const QUEUE_FLAG_DISABLE_GPU_TIMEOUT = 0x1;
          const QUEUE_FLAG_INIT_MICROPROFILE = 0x2;
          const MAX_QUEUE_FLAG = 0xFFFFFFFF;
+    }
+}
+
+
+bitflags! {
+    pub struct TextureCreationFlags: u32 {
+        /// Default flag (Texture will use default allocation strategy decided by the api specific allocator)
+        const TEXTURE_CREATION_FLAG_NONE = 0;
+        /// Texture will allocate its own memory (COMMITTED resource)
+        const TEXTURE_CREATION_FLAG_OWN_MEMORY_BIT = 0x01;
+        /// Texture will be allocated in memory which can be shared among multiple processes
+        const TEXTURE_CREATION_FLAG_EXPORT_BIT = 0x02;
+        /// Texture will be allocated in memory which can be shared among multiple gpus
+        const TEXTURE_CREATION_FLAG_EXPORT_ADAPTER_BIT = 0x04;
+        /// Texture will be imported from a handle created in another process
+        const TEXTURE_CREATION_FLAG_IMPORT_BIT = 0x08;
+        /// Use ESRAM to store this texture
+        const TEXTURE_CREATION_FLAG_ESRAM = 0x10;
+        /// Use on-tile memory to store this texture
+        const TEXTURE_CREATION_FLAG_ON_TILE = 0x20;
+        /// Prevent compression meta data from generating (XBox)
+        const TEXTURE_CREATION_FLAG_NO_COMPRESSION = 0x40;
+        /// Force 2D instead of automatically determining dimension based on width, height, depth
+        const TEXTURE_CREATION_FLAG_FORCE_2D = 0x80;
+        /// Force 3D instead of automatically determining dimension based on width, height, depth
+        const TEXTURE_CREATION_FLAG_FORCE_3D = 0x100;
+        /// Display target
+        const TEXTURE_CREATION_FLAG_ALLOW_DISPLAY_TARGET = 0x200;
+        /// Create an sRGB texture.
+        const TEXTURE_CREATION_FLAG_SRGB = 0x400;
+        /// Create a normal map texture
+        const TEXTURE_CREATION_FLAG_NORMAL_MAP = 0x800;
+        /// Fast clear
+        const TEXTURE_CREATION_FLAG_FAST_CLEAR = 0x1000;
+        /// Fragment mask
+        const TEXTURE_CREATION_FLAG_FRAG_MASK = 0x2000;
+        /// Doubles the amount of array layers of the texture when rendering VR. Also forces the texture to be a 2D Array texture.
+        const TEXTURE_CREATION_FLAG_VR_MULTIVIEW = 0x4000;
+        /// Binds the FFR fragment density if this texture is used as a render target.
+        const TEXTURE_CREATION_FLAG_VR_FOVEATED_RENDERING = 0x8000;
     }
 }
 

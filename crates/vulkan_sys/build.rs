@@ -5,6 +5,9 @@ use std::env;
 fn main() {
 
     let dst = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let vulkan_mem_dir = PathBuf::new().join("VulkanMemoryAllocator");
+    let vulkan_mem_include_dir = vulkan_mem_dir.join("include");
+
     let vulkan_dir = PathBuf::new().join("Vulkan-Headers");
     let vulkan_include_dir = vulkan_dir.join("include/vulkan");
     let mut binding = bindgen::Builder::default()
@@ -71,6 +74,7 @@ fn main() {
 
     let bindings = binding
         .clang_arg(format!("-I{}", vulkan_include_dir.to_string_lossy()))
+        .clang_arg(format!("-I{}", vulkan_mem_include_dir.to_string_lossy()))
         .header(PathBuf::new().join("wrapper.h").to_string_lossy())
         .generate()
         .expect("Unable to generate bindings");

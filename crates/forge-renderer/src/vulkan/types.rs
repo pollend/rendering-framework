@@ -3,6 +3,7 @@ use crate::{
     types::{AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType},
 };
 use bitflags::bitflags;
+use crate::types::SampleCount;
 
 impl QueueType {
     pub fn to_vk_queue(&self) -> ffi::vk::VkQueueFlagBits {
@@ -51,13 +52,47 @@ impl MipMapMode {
     }
 }
 
+impl DescriptorType {
+    pub fn to_vk_usage(&self) -> ffi::vk::VkImageUsageFlags {
+        let mut result: ffi::vk::VkImageUsageFlags = 0;
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE) {
+            result |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+        if self.contains(DescriptorType::DESCRIPTOR_TYPE_RW_TEXTURE) {
+            result |=  ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT;
+        }
+        return result;
+    }
+}
+
+impl SampleCount {
+    pub fn to_vk_sample_count(&self) -> ffi::vk::VkSampleCountFlagBits {
+        match self {
+            SampleCount::SampleCount1 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_1_BIT,
+            SampleCount::SampleCount2 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_2_BIT,
+            SampleCount::SampleCount4 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_4_BIT,
+            SampleCount::SampleCount8 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_8_BIT,
+            SampleCount::SampleCount16 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_16_BIT,
+            _ => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_1_BIT,
+        }
+    }
+}
+
 impl AddressMode {
     pub fn to_vk_address_mode(&self) -> u32 {
         match self {
-            AddressMode::AddressModeMirror => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
-            AddressMode::AddressModeRepeat => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            AddressMode::AddressModeClampToEdge => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            AddressMode::AddressModeClampToBorder => ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            AddressMode::AddressModeMirror => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+            }
+            AddressMode::AddressModeRepeat => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_REPEAT
+            }
+            AddressMode::AddressModeClampToEdge => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            }
+            AddressMode::AddressModeClampToBorder => {
+                ffi::vk::VkSamplerAddressMode_VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            }
         }
     }
 }
@@ -220,6 +255,11 @@ pub const MAX_QUEUE_FLAGS: u32 = ffi::vk::VkQueueFlagBits_VK_QUEUE_GRAPHICS_BIT
     | ffi::vk::VkQueueFlagBits_VK_QUEUE_TRANSFER_BIT
     | ffi::vk::VkQueueFlagBits_VK_QUEUE_SPARSE_BINDING_BIT
     | ffi::vk::VkQueueFlagBits_VK_QUEUE_PROTECTED_BIT;
+
+pub const VSYNC_PREFERRED_MODE:  &[ffi::vk::VkPresentModeKHR]= &[
+    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
+];
 
 pub const MAX_QUEUE_FAMILIES: u32 = 16;
 pub const MAX_QUEUE_COUNT: u32 = 64;

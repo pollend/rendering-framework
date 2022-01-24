@@ -67,8 +67,6 @@ impl Queue<VulkanAPI> for VulkanQueue {
         &self,
         desc: &mut QueuePresentDesc<VulkanAPI>,
     ) -> RendererResult<FenceStatus> {
-
-
         let mut status = FenceStatus::Complete;
         todo!()
     }

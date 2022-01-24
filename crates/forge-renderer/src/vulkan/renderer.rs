@@ -1,23 +1,15 @@
-use crate::{
-    check_vk_result,
-    desc::RenderDescImp,
-    error::RendererError::VulkanError,
-    ffi,
-    types::{CompareMode, DescriptorType, FilterType, MipMapMode, QueueType, ResourceMemoryUsage},
-    vulkan::{
-        device::VulkanGPUInfo,
-        types::{
-            VulkanSupportedFeatures, GLOBAL_INSTANCE_EXTENSIONS, GLOBAL_WANTED_DEVICE_EXTENSIONS,
-            MAX_QUEUE_COUNT, MAX_QUEUE_FAMILIES, MAX_QUEUE_FLAGS,
-        },
-        VulkanBuffer, VulkanCommandPool, VulkanPipeline, VulkanQueue, VulkanRenderTarget,
-        VulkanRenderer, VulkanSampler, VulkanSemaphore,
+use crate::{check_vk_result, desc::{CmdDesc, RenderDescImp}, error::RendererError::VulkanError, ffi, types::{CompareMode, DescriptorType, FilterType, MipMapMode, QueueType, ResourceMemoryUsage}, vulkan::{
+    device::VulkanGPUInfo,
+    types::{
+        VulkanSupportedFeatures, GLOBAL_INSTANCE_EXTENSIONS, GLOBAL_WANTED_DEVICE_EXTENSIONS,
+        MAX_QUEUE_COUNT, MAX_QUEUE_FAMILIES, MAX_QUEUE_FLAGS,
     },
-    BufferDesc, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, Renderer, RendererResult,
-    RootSignatureDesc, SamplerDesc, VulkanAPI,
-};
+    VulkanBuffer, VulkanCommand, VulkanCommandPool, VulkanPipeline, VulkanQueue,
+    VulkanRenderTarget, VulkanRenderer, VulkanSampler, VulkanSemaphore, VulkanSwapChain,
+}, BufferDesc, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, Renderer, RendererResult, RootSignatureDesc, SamplerDesc, SwapChainDesc, VulkanAPI, RenderTargetDesc, TextureDesc};
 use forge_image_format::ImageFormat;
 use log::{error, info, log, warn};
+use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::{
     borrow::{Borrow, BorrowMut},
     cmp::{min, Ordering},
@@ -31,13 +23,36 @@ use std::{
     thread::sleep,
     u32,
 };
-use crate::desc::CmdDesc;
-use crate::vulkan::VulkanCommand;
+use std::cmp::max;
+use crate::error::RendererError;
+use crate::ffi::vk;
+use crate::types::{ResourceState, SampleCount, TextureCreationFlags};
+use crate::vulkan::VulkanTexture;
 
 struct QueueFamilyResult {
     properties: ffi::vk::VkQueueFamilyProperties,
     family_index: u32,
     queue_index: u32,
+}
+
+fn util_vk_image_usage_to_format_features(usage: ffi::vk::VkImageUsageFlags) -> ffi::vk::VkFormatFeatureFlags {
+    let mut result: ffi::vk::VkFormatFeatureFlags = 0;
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT) {
+        result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    }
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT)
+    {
+        result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+    }
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+    {
+        result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    }
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+    {
+        result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    }
+    return result;
 }
 
 unsafe fn util_find_queue_family_index(
@@ -828,10 +843,6 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(result)
     }
 
-    unsafe fn add_swap_chain(&self) {
-        todo!()
-    }
-
     unsafe fn drop_swap_chain(&self) {
         todo!()
     }
@@ -844,7 +855,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         let mut cmd_pool = VulkanCommandPool {
             renderer: self.me.clone().upgrade().unwrap(),
             cmd_pool: ptr::null_mut(),
-            queue: desc.queue
+            queue: desc.queue,
         };
         let mut add_info = ffi::vk::VkCommandPoolCreateInfo {
             sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -856,39 +867,67 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             }),
             queueFamilyIndex: desc.queue.family_index,
         };
-        let result = ffi::vk::vkCreateCommandPool(self.device, &mut add_info, ptr::null_mut(), &mut cmd_pool.cmd_pool);
+        let result = ffi::vk::vkCreateCommandPool(
+            self.device,
+            &mut add_info,
+            ptr::null_mut(),
+            &mut cmd_pool.cmd_pool,
+        );
         if result != ffi::vk::VkResult_VK_SUCCESS {
-            return  Err(VulkanError(result))
+            return Err(VulkanError(result));
         }
         Ok(cmd_pool)
     }
 
-    unsafe fn add_cmd<'a>(&self, desc: &mut CmdDesc<'a, VulkanAPI>) -> RendererResult<VulkanCommand<'a>> {
-
+    unsafe fn add_cmd<'a>(
+        &self,
+        desc: &mut CmdDesc<'a, VulkanAPI>,
+    ) -> RendererResult<VulkanCommand<'a>> {
         let mut cmd = VulkanCommand {
             renderer: self.me.clone().upgrade().unwrap(),
             cmd_buf: ptr::null_mut(),
             active_render_pass: ptr::null_mut(),
             bound_pipeline_layout: ptr::null_mut(),
-            pool: desc.cmd_pool
+            pool: desc.cmd_pool,
         };
 
         let mut alloc_info = ffi::vk::VkCommandBufferAllocateInfo {
             sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             pNext: ptr::null_mut(),
             commandPool: desc.cmd_pool.cmd_pool,
-            level: if desc.secondary { ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_SECONDARY } else {ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_PRIMARY},
-            commandBufferCount: 1
+            level: if desc.secondary {
+                ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_SECONDARY
+            } else {
+                ffi::vk::VkCommandBufferLevel_VK_COMMAND_BUFFER_LEVEL_PRIMARY
+            },
+            commandBufferCount: 1,
         };
-        let result = ffi::vk::vkAllocateCommandBuffers(self.device, ptr::null_mut(), &mut cmd.cmd_buf);
+        let result =
+            ffi::vk::vkAllocateCommandBuffers(self.device, ptr::null_mut(), &mut cmd.cmd_buf);
         if result != ffi::vk::VkResult_VK_SUCCESS {
-            return  Err(VulkanError(result))
+            return Err(VulkanError(result));
         }
 
         Ok(cmd)
     }
 
-    unsafe fn add_render_target(&self) -> RendererResult<VulkanRenderTarget> {
+    unsafe fn add_render_target(&self, desc: &RenderTargetDesc) -> RendererResult<VulkanRenderTarget> {
+
+        let is_depth = desc.format.is_depth_only() || desc.format.is_depth_and_stencil_only();
+        assert!(!(is_depth && desc.descriptors.contains( DescriptorType::DESCRIPTOR_TYPE_RW_BUFFER)), "Cannot use depth stencil as UAV");
+
+        let mip_levels = max(desc.mip_levels, 1);
+        let array_size = desc.array_size;
+        let depth_or_array_size = array_size * desc.depth;
+        let mut num_rtvs = desc.mip_levels;
+
+        if desc.descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_ARRAY_SLICES) ||
+            desc.descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_DEPTH_SLICES) {
+            num_rtvs *= depth_or_array_size;
+        }
+
+
+
         todo!()
     }
 
@@ -967,5 +1006,457 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             .as_ref()
             .expect("render not initialized")
             .borrow();
+    }
+
+    unsafe fn add_swap_chain<'a>(
+        &self,
+        desc: &'a SwapChainDesc<'a, VulkanAPI>,
+        window_handle: &impl HasRawWindowHandle,
+    ) -> RendererResult<VulkanSwapChain> {
+        assert!(self.instance != ptr::null_mut());
+        assert!(desc.presentation_queues.len() > 0);
+
+        unsafe {
+            let mut vk_surface: ffi::vk::VkSurfaceKHR = ptr::null_mut();
+            match window_handle.raw_window_handle() {
+                RawWindowHandle::UiKit(_) => {
+                    panic!("uiKit is not configured")
+                }
+                RawWindowHandle::AppKit(_) => {
+                    panic!("app kit is not configured")
+                }
+                RawWindowHandle::Orbital(_) => {
+                    panic!("orbital is not configured")
+                }
+                RawWindowHandle::Xlib(handle) => {
+                    cfg_if::cfg_if! {
+                        if  #[cfg(feature = "xlib")] {
+                             let mut surface_info = ffi::vk::VkXlibSurfaceCreateInfoKHR {
+                                    sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                                    pNext: ptr::null_mut(),
+                                    flags: 0,
+                                    dpy: handle.display as *mut ffi::vk::Display,
+                                    window: handle.window
+                                };
+                                let result = ffi::vk::vkCreateXlibSurfaceKHR(self.instance, &surface_info, ptr::null_mut(), &mut vk_surface);
+                                if result != ffi::vk::VkResult_VK_SUCCESS {
+                                    return Err(VulkanError(result))
+                                }
+                        } else {
+                            panic!("xlib is not configured")
+                        }
+                    }
+                }
+                RawWindowHandle::Xcb(handle) => {
+                    cfg_if::cfg_if! {
+                        if #[cfg(feature = "xcb")] {
+                            let mut surface_info = ffi::vk::VkXcbSurfaceCreateInfoKHR {
+                                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                                pNext: ptr::null_mut(),
+                                flags: 0,
+                                connection: handle.connection as *mut ffi::vk::xcb_connection_t,
+                                window: handle.window
+                            };
+                            let result = ffi::vk::vkCreateXcbSurfaceKHR(self.instance, &surface_info, ptr::null_mut(), &mut vk_surface);
+                            if result != ffi::vk::VkResult_VK_SUCCESS {
+                                return Err(VulkanError(result))
+                            }
+                        } else {
+                            panic!("xcb is not configured")
+                        }
+                    }
+                }
+                RawWindowHandle::Wayland(_) => {
+                    panic!("TODO: wayland is not configured")
+                }
+                RawWindowHandle::Win32(_) => {
+                    panic!("TODO: win32 is not configured")
+                }
+                RawWindowHandle::WinRt(_) => {
+                    panic!("TODO: winRT is not configured")
+                }
+                RawWindowHandle::Web(_) => {
+                    panic!("TODO: web is not configured")
+                }
+                RawWindowHandle::AndroidNdk(_) => {
+                    panic!("TODO: android ndk is not configured")
+                }
+                _ => {
+                    panic!("unhandled surface")
+                }
+            }
+            assert!(self.active_gpu != ptr::null_mut());
+
+            // image count
+            let mut image_count = if desc.image_count == 0 {
+                2
+            } else {
+                desc.image_count
+            };
+            let mut caps: ffi::vk::VkSurfaceCapabilitiesKHR = MaybeUninit::zeroed().assume_init();
+            {
+                let result = ffi::vk::vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+                    self.active_gpu,
+                    vk_surface,
+                    &mut caps,
+                );
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            }
+
+            if caps.maxImageCount > 0 && desc.image_count > caps.maxImageCount {
+                warn!(
+                    "Changed requested SwapChain image {} to maximum allowed SwaphChain image {}",
+                    desc.image_count, caps.maxImageCount
+                );
+                image_count = caps.maxImageCount;
+            }
+
+            if desc.image_count < caps.minImageCount {
+                warn!(
+                    "Changed requested SwapChain image {} to maximum allowed SwaphChain image {}",
+                    desc.image_count, caps.minImageCount
+                );
+                image_count = caps.minImageCount;
+            }
+
+            // Surface format
+            // select a surface format, depending on whether HRD is available.
+            let mut surface_format = ffi::vk::VkSurfaceFormatKHR {
+                format: ffi::vk::VkFormat_VK_FORMAT_UNDEFINED,
+                colorSpace: ffi::vk::VkColorSpaceKHR_VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            };
+            let mut surface_format_count: u32 = 0;
+            ffi::vk::vkGetPhysicalDeviceSurfaceFormatsKHR(
+                self.active_gpu,
+                vk_surface,
+                &mut surface_format_count,
+                ptr::null_mut(),
+            );
+            let mut formats: Vec<ffi::vk::VkSurfaceFormatKHR> =
+                vec![MaybeUninit::zeroed().assume_init(); surface_format_count as usize];
+            ffi::vk::vkGetPhysicalDeviceSurfaceFormatsKHR(
+                self.active_gpu,
+                vk_surface,
+                &mut surface_format_count,
+                formats.as_mut_ptr(),
+            );
+
+            if formats.len() == 1 && formats[0].colorSpace == ffi::vk::VkFormat_VK_FORMAT_UNDEFINED
+            {
+                surface_format.format = ffi::vk::VkFormat_VK_FORMAT_B8G8R8A8_UNORM;
+                surface_format.colorSpace =
+                    ffi::vk::VkColorSpaceKHR_VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+            } else {
+                let hrd_surface_format = ffi::vk::VkSurfaceFormatKHR {
+                    format: ffi::vk::VkFormat_VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+                    colorSpace: ffi::vk::VkColorSpaceKHR_VK_COLOR_SPACE_HDR10_ST2084_EXT,
+                };
+                let requested_format: ffi::vk::VkFormat = desc.color_format.to_vk_format();
+                let requested_color_space = if requested_format == hrd_surface_format.format {
+                    hrd_surface_format.colorSpace
+                } else {
+                    ffi::vk::VkColorSpaceKHR_VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+                };
+
+                for format in formats {
+                    if format.format == requested_format
+                        && requested_color_space == format.colorSpace
+                    {
+                        surface_format.format = requested_format;
+                        surface_format.colorSpace = requested_color_space;
+                        break;
+                    }
+                }
+            }
+
+            let mut present_mode: ffi::vk::VkPresentModeKHR =
+                ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR;
+            let mut swap_chain_image_count: u32 = 0;
+            {
+                let result = ffi::vk::vkGetPhysicalDeviceSurfacePresentModesKHR(
+                    self.active_gpu,
+                    vk_surface,
+                    &mut swap_chain_image_count,
+                    ptr::null_mut(),
+                );
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            }
+            let mut modes: Vec<ffi::vk::VkPresentModeKHR> =
+                vec![MaybeUninit::zeroed().assume_init(); swap_chain_image_count as usize];
+            {
+                let result = ffi::vk::vkGetPhysicalDeviceSurfacePresentModesKHR(
+                    self.active_gpu,
+                    vk_surface,
+                    &mut swap_chain_image_count,
+                    modes.as_mut_ptr(),
+                );
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            }
+
+            let preferred_modes = if desc.enable_vsync {
+                [
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
+                ].as_slice()
+            } else {
+                [
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_IMMEDIATE_KHR,
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_MAILBOX_KHR,
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+                    ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
+                ].as_slice()
+            };
+
+            for preferred_mode in preferred_modes {
+                for mode in &modes {
+                    if mode == preferred_mode {
+                        present_mode = *mode;
+                        break;
+                    }
+                }
+            }
+
+            // swap chain
+            let mut extent = ffi::vk::VkExtent2D {
+                width: max(min(caps.minImageExtent.width, desc.width), caps.maxImageExtent.width),
+                height: max(min(caps.minImageExtent.height, desc.width), caps.maxImageExtent.height),
+            };
+            let sharing_mode: ffi::vk::VkSharingMode = ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE;
+            let mut present_queue_family_index: Option<u32> = None;
+
+            let mut family_property_count: u32 = 0;
+            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(self.active_gpu, &mut family_property_count, ptr::null_mut());
+            let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> = vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
+            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(self.active_gpu, &mut family_property_count, family_properties.as_mut_ptr());
+
+            // Check if hardware provides dedicated present queue
+            if family_property_count > 0 {
+                for (index, property) in family_properties.iter().enumerate() {
+                    let mut is_supported: ffi::vk::VkBool32 = 0;
+                    let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(self.active_gpu, index as u32, vk_surface, &mut is_supported);
+                    if result == ffi::vk::VkResult_VK_SUCCESS && ffi::vk::VK_TRUE == is_supported && desc.presentation_queues[0].family_index != index as u32 {
+                        present_queue_family_index = Some(index as u32);
+                        break;
+                    }
+                }
+                if present_queue_family_index == None {
+                    for (index, property) in family_properties.iter().enumerate() {
+                        let mut is_supported: ffi::vk::VkBool32 = 0;
+                        let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(self.active_gpu, index as u32, vk_surface, &mut is_supported);
+                        if result == ffi::vk::VkResult_VK_SUCCESS && ffi::vk::VK_TRUE == is_supported {
+                            present_queue_family_index = Some(index as u32);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Find if gpu has a dedicated present queue
+            let mut present_queue: ffi::vk::VkQueue = ptr::null_mut();
+            let mut queue_family_index_count = 0;
+            let mut queue_family_indices = [desc.presentation_queues[0].family_index, 0];
+            let mut final_present_queue_family_index = 0;
+            if present_queue_family_index != None && Some(queue_family_indices[0]) != present_queue_family_index {
+                queue_family_index_count = 1;
+                final_present_queue_family_index = present_queue_family_index.unwrap();
+                queue_family_indices[0] = final_present_queue_family_index;
+                ffi::vk::vkGetDeviceQueue(self.device, queue_family_indices[0], 0, &mut present_queue);
+            } else {
+                final_present_queue_family_index = queue_family_indices[0];
+                present_queue = ptr::null_mut();
+            }
+
+            let mut pre_transform: ffi::vk::VkSurfaceTransformFlagBitsKHR = 0;
+            if caps.supportedTransforms & ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR > 0 {
+                pre_transform = ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+            } else {
+                pre_transform = caps.currentTransform;
+            }
+            let mut composite_alpha: ffi::vk::VkCompositeAlphaFlagBitsKHR = ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR;
+
+            for flag in [
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR
+            ] {
+                if caps.supportedCompositeAlpha & flag > 0 {
+                    composite_alpha = flag;
+                    break
+                }
+            }
+            assert!(composite_alpha != ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR);
+
+            let mut vk_swap_chain: ffi::vk::VkSwapchainKHR = ptr::null_mut();
+            let mut swap_chain_info = ffi::vk::VkSwapchainCreateInfoKHR {
+                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                pNext: ptr::null_mut(),
+                flags: 0,
+                surface: vk_surface,
+                minImageCount: desc.image_count,
+                imageFormat: surface_format.format,
+                imageColorSpace: surface_format.colorSpace,
+                imageExtent: extent,
+                imageArrayLayers: 1,
+                imageUsage: ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                imageSharingMode: sharing_mode,
+                queueFamilyIndexCount: queue_family_index_count,
+                pQueueFamilyIndices: queue_family_indices.as_mut_ptr(),
+                preTransform: pre_transform,
+                compositeAlpha: composite_alpha,
+                presentMode: present_mode,
+                clipped: ffi::vk::VK_TRUE,
+                oldSwapchain: ptr::null_mut()
+            };
+            {
+                let result = ffi::vk::vkCreateSwapchainKHR(self.device, &mut swap_chain_info, ptr::null_mut(), &mut vk_swap_chain);
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            }
+
+            // desc.color_format = ImageFormat::from_vk_format(surface_format.format);
+
+
+            Ok(VulkanSwapChain {})
+        }
+    }
+
+    unsafe fn add_texture(&self, desc: &TextureDesc) -> RendererResult<VulkanTexture> {
+        assert!(desc.width > 0 && desc.height > 0 && (desc.depth > 0 || desc.array_size > 0));
+        let sample_count: u32 = desc.sample_count as u32;
+        if (desc.sample_count as u32) > (SampleCount::SampleCount1 as u32) && desc.mip_levels > 1 {
+            error!("Multi-Sampled textures cannot have mip maps");
+            assert!(false);
+            return Err(RendererError::Unhandled);
+        }
+
+        let mut texture = VulkanTexture {
+            vk_srv_descriptor: ptr::null_mut(),
+            vk_uav_descriptors: vec![],
+            vk_srv_stencil_descriptor: ptr::null_mut(),
+            vk_image: ptr::null_mut(),
+            own_image: false
+        };
+
+        if desc.native_handle != ptr::null_mut() && !desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_IMPORT_BIT) {
+            texture.own_image = false;
+            texture.vk_image = desc.native_handle as ffi::vk::VkImageView;
+        } else  {
+            texture.own_image = true;
+        }
+
+        let mut additional_flag: ffi::vk::VkImageUsageFlags = 0;
+        if desc.start_state.contains(ResourceState::RENDER_TARGET) {
+            additional_flag |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        } else if desc.start_state.contains(ResourceState::DEPTH_WRITE) {
+            additional_flag |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        }
+
+        let array_size: u32 = desc.array_size;
+        let mut image_type: ffi::vk::VkImageType = ffi::vk::VkImageType_VK_IMAGE_TYPE_MAX_ENUM;
+        if desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_2D) {
+            assert_eq!(desc.depth, 1);
+            image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_2D;
+        } else if desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_3D) {
+            image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_3D;
+        } else {
+            if desc.depth > 1 {
+                image_type =  ffi::vk::VkImageType_VK_IMAGE_TYPE_3D;
+            } else if desc.height > 1 {
+                image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_2D;
+            } else {
+                image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_1D;
+            }
+        }
+
+        let mut descriptors = desc.descriptors;
+        let mut cubemap_required: bool = descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE_CUBE);
+        let mut array_required: bool = false;
+
+        let is_planer: bool = desc.format.is_planer();
+        let num_planes: u32 = desc.format.num_planes();
+        let is_single_plane: bool = desc.format.is_single_plane();
+        assert!((num_planes == 1 && is_single_plane) && (!is_single_plane && num_planes > 1 && num_planes <= 3),
+            "Number of planes for multi-planar formats must be 2 or 3 and for single-planar formats it must be 1.");
+
+        if image_type == ffi::vk::VkImageType_VK_IMAGE_TYPE_3D {
+            array_required = true;
+        }
+
+        if texture.vk_image == ptr::null_mut() {
+
+
+            let mut add_info = ffi::vk::VkImageCreateInfo {
+                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                pNext: ptr::null_mut(),
+                flags: {
+                    let mut result: ffi::vk::VkImageCreateFlags = 0;
+                    if cubemap_required {
+                        result |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+                    }
+                    if array_required {
+                        result |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT_KHR;
+                    }
+                    result
+                },
+                imageType: image_type,
+                format: desc.format.to_vk_format(),
+                extent: ffi::vk::VkExtent3D {
+                    width: desc.width,
+                    height: desc.height,
+                    depth: desc.depth
+                },
+                mipLevels: desc.mip_levels,
+                arrayLayers: array_size,
+                samples: desc.sample_count.to_vk_sample_count(),
+                tiling: ffi::vk::VkImageTiling_VK_IMAGE_TILING_OPTIMAL,
+                usage: descriptors.to_vk_usage() | additional_flag,
+                sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
+                queueFamilyIndexCount: 0,
+                pQueueFamilyIndices: ptr::null_mut(),
+                initialLayout: ffi::vk::VkImageLayout_VK_IMAGE_LAYOUT_UNDEFINED
+            };
+
+            let mut format_props: ffi::vk::VkFormatProperties = MaybeUninit::zeroed().assume_init();
+            ffi::vk::vkGetPhysicalDeviceFormatProperties(self.active_gpu, add_info.format, &mut format_props);
+
+            // multi-planar formats must have each plane separately bound to memory, rather than having a single memory binding for the whole image
+            if is_planer {
+                assert!((format_props.optimalTilingFeatures & ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_DISJOINT_BIT) > 0);
+                add_info.flags |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_DISJOINT_BIT;
+            }
+
+            if (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT) > 0 || (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT) > 0 {
+                // Make it easy to copy to and from textures
+                add_info.usage |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            }
+
+            // ASSERT(pRenderer->pCapBits->canShaderReadFrom[pDesc->mFormat] && "GPU shader can't' read from this format");
+            // Verify that GPU supports this format
+            let format_features: ffi::vk::VkFormatFeatureFlags = util_vk_image_usage_to_format_features(add_info.usage);
+            let flags: ffi::vk::VkFormatFeatureFlags = format_props.optimalTilingFeatures & format_features;
+            assert!((0 != flags), "Format is not supported for GPU local images (i.e. not host visible images)");
+
+            let mut mem_reqs = ffi::vk::VmaAllocationCreateInfo {
+                flags: 0,
+                usage: ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_GPU_ONLY,
+                requiredFlags: 0,
+                preferredFlags: 0,
+                memoryTypeBits: 0,
+                pool: ptr::null_mut(),
+                pUserData: ptr::null_mut(),
+                priority: 0.0
+            };
+
+
+        }
+        todo!()
     }
 }

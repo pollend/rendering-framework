@@ -4,8 +4,8 @@
 
 use crate::{
     desc::{
-        BufferDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,
-        RootSignatureDesc, SamplerDesc,
+        BufferDesc, CmdDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,
+        RootSignatureDesc, SamplerDesc, SwapChainDesc,
     },
     error::RendererResult,
     types::{FenceStatus, GPUPresetLevel, GPUSupportedFeatures, ShadingRates},
@@ -15,7 +15,7 @@ use std::{
     ffi::{CStr, CString},
     sync::Arc,
 };
-use crate::desc::CmdDesc;
+use crate::desc::{RenderTargetDesc, TextureDesc};
 
 mod desc;
 mod error;
@@ -69,6 +69,7 @@ pub trait Api: Clone + Sized {
     type Command<'a>: Command<Self>;
     type CommandPool<'a>: CommandPool;
     type Buffer: Buffer;
+    type SwapChain: SwapChain;
 
     const CURRENT_API: APIType;
 }
@@ -80,6 +81,8 @@ pub struct BufferBarrier<'a, A: Api> {
 pub trait CommandPool: Sized {
     fn reset(&mut self) -> RendererResult<()>;
 }
+
+pub trait SwapChain: Sized {}
 
 pub trait RootSignature: Sized {}
 
@@ -100,9 +103,14 @@ pub trait Renderer<A: Api>: Sized {
     ) -> RendererResult<A::CommandPool<'a>>;
     unsafe fn add_cmd<'a>(&self, desc: &mut CmdDesc<'a, A>) -> RendererResult<A::Command<'a>>;
     unsafe fn add_queue(&mut self, desc: &QueueDesc) -> RendererResult<A::Queue>;
-    unsafe fn add_swap_chain(&self);
+    unsafe fn add_swap_chain<'a>(
+        &self,
+        desc: &'a SwapChainDesc<'a, A>,
+        window_handle: &impl raw_window_handle::HasRawWindowHandle,
+    ) -> RendererResult<A::SwapChain>;
     unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<A::Sampler>;
-    unsafe fn add_render_target(&self) -> RendererResult<A::RenderTarget>;
+    unsafe fn add_render_target(&self, desc: &RenderTargetDesc) -> RendererResult<A::RenderTarget>;
+    unsafe fn add_texture(&self, desc: &TextureDesc) -> RendererResult<A::Texture>;
     unsafe fn add_root_signature(
         &self,
         signature: &RootSignatureDesc<A>,

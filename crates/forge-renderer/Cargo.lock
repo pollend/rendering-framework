@@ -840,6 +840,7 @@ name = "renderer"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "cfg-if 1.0.0",
  "forge_image_format",
  "forge_math",
  "log",

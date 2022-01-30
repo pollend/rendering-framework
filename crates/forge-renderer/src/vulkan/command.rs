@@ -133,21 +133,24 @@ impl<'a> Command<VulkanAPI> for VulkanCommand<'a> {
         ffi::vk::vkCmdDispatch(self.cmd_buf, group_count_x, group_count_y, group_count_z);
     }
 
-    unsafe fn cmd_update_buffer(
-        &mut self,
-        buffer: &VulkanBuffer,
-        dst_offset: u64,
-        src_buffer: &VulkanBuffer,
-        size: u64,
-    ) {
-        todo!()
-    }
-
     unsafe fn cmd_resource_barrier(&self) {
         todo!()
     }
 
     unsafe fn cmd_update_virtual_texture(&self) {
         todo!()
+    }
+
+    unsafe fn update_buffer(&mut self, src_buffer: &VulkanBuffer, src_offset: u64, dest_buffer: &VulkanBuffer, dst_offset: u64, size: u64) {
+        // assert!(self.vk_buffer != ptr::null_mut());
+        assert!(src_offset + size <= src_buffer.size);
+        assert!(dst_offset + size <= dest_buffer.size);
+
+        let mut region = ffi::vk::VkBufferCopy {
+            srcOffset: src_offset,
+            dstOffset: dst_offset,
+            size: size
+        };
+        ffi::vk::vkCmdCopyBuffer(self.cmd_buf, src_buffer.vk_buffer, dest_buffer.vk_buffer, 1, &mut region);
     }
 }

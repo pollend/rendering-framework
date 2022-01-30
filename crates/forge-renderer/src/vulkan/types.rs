@@ -1,9 +1,22 @@
 use crate::{
     ffi,
-    types::{AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType},
+    types::{
+        AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType,
+        ResourceMemoryUsage, SampleCount,
+    },
 };
 use bitflags::bitflags;
-use crate::types::SampleCount;
+
+#[macro_export]
+macro_rules! check_vk_result {
+    ($x:expr) => {{
+        let result = $x;
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            error!("{}: Failed with VKResult: {}", stringify!($x), result);
+            assert!(false);
+        }
+    }};
+}
 
 impl QueueType {
     pub fn to_vk_queue(&self) -> ffi::vk::VkQueueFlagBits {
@@ -59,7 +72,7 @@ impl DescriptorType {
             result |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT;
         }
         if self.contains(DescriptorType::DESCRIPTOR_TYPE_RW_TEXTURE) {
-            result |=  ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT;
+            result |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT;
         }
         return result;
     }
@@ -74,6 +87,18 @@ impl SampleCount {
             SampleCount::SampleCount8 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_8_BIT,
             SampleCount::SampleCount16 => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_16_BIT,
             _ => ffi::vk::VkSampleCountFlagBits_VK_SAMPLE_COUNT_1_BIT,
+        }
+    }
+}
+
+impl ResourceMemoryUsage {
+    pub fn to_vma_usage(&self) -> ffi::vk::VmaMemoryUsage {
+        match self {
+            ResourceMemoryUsage::Unknown => ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_UNKNOWN,
+            ResourceMemoryUsage::GpuOnly => ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_GPU_ONLY,
+            ResourceMemoryUsage::CpuOnly => ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_CPU_ONLY,
+            ResourceMemoryUsage::CpuToGpu => ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_CPU_TO_GPU,
+            ResourceMemoryUsage::GpuToCpu => ffi::vk::VmaMemoryUsage_VMA_MEMORY_USAGE_GPU_TO_CPU,
         }
     }
 }
@@ -256,7 +281,7 @@ pub const MAX_QUEUE_FLAGS: u32 = ffi::vk::VkQueueFlagBits_VK_QUEUE_GRAPHICS_BIT
     | ffi::vk::VkQueueFlagBits_VK_QUEUE_SPARSE_BINDING_BIT
     | ffi::vk::VkQueueFlagBits_VK_QUEUE_PROTECTED_BIT;
 
-pub const VSYNC_PREFERRED_MODE:  &[ffi::vk::VkPresentModeKHR]= &[
+pub const VSYNC_PREFERRED_MODE: &[ffi::vk::VkPresentModeKHR] = &[
     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
 ];

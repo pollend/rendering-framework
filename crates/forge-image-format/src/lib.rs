@@ -1,10 +1,10 @@
-
 mod ffi {
     pub use vulkan_sys as vk;
 }
 
 #[allow(non_camel_case_types)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
+#[repr(u32)]
 pub enum ImageFormat {
     UNDEFINED,
     R1_UNORM,
@@ -244,25 +244,37 @@ pub enum ImageFormat {
     G16_B16_R16_3PLANE_422_UNORM,
     G16_B16_R16_3PLANE_444_UNORM,
     G16_B16R16_2PLANE_420_UNORM,
-    G16_B16R16_2PLANE_422_UNORM
+    G16_B16R16_2PLANE_422_UNORM,
 }
 
 impl ImageFormat {
-
     pub fn is_depth_only(&self) -> bool {
         match self {
-            ImageFormat::D16_UNORM |
-            ImageFormat::X8_D24_UNORM |
-            ImageFormat::D32_SFLOAT => true,
-            _ => false
+            ImageFormat::D16_UNORM | ImageFormat::X8_D24_UNORM | ImageFormat::D32_SFLOAT => true,
+            _ => false,
         }
+    }
+
+    pub fn is_depth(&self) -> bool {
+        return self.is_depth_only() || self.is_depth_and_stencil_only();
+    }
+
+    pub fn is_stencil(&self) -> bool {
+        return self.is_stencil_only() || self.is_depth_and_stencil_only();
     }
 
     pub fn is_depth_and_stencil_only(&self) -> bool {
         match self {
-            ImageFormat::D16_UNORM_S8_UINT |
-            ImageFormat::D24_UNORM_S8_UINT |
-            ImageFormat::D32_SFLOAT_S8_UINT => true,
+            ImageFormat::D16_UNORM_S8_UINT
+            | ImageFormat::D24_UNORM_S8_UINT
+            | ImageFormat::D32_SFLOAT_S8_UINT => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_stencil_only(&self) -> bool {
+        match self {
+            ImageFormat::S8_UINT => true,
             _ => false
         }
     }
@@ -273,32 +285,31 @@ impl ImageFormat {
 
     pub fn num_planes(&self) -> u32 {
         match self {
-            ImageFormat::G8_B8_R8_3PLANE_420_UNORM|
-            ImageFormat::G8_B8_R8_3PLANE_422_UNORM|
-            ImageFormat::G8_B8_R8_3PLANE_444_UNORM|
-            ImageFormat::G16_B16_R16_3PLANE_420_UNORM|
-            ImageFormat::G16_B16_R16_3PLANE_422_UNORM|
-            ImageFormat::G16_B16_R16_3PLANE_444_UNORM|
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16|
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16|
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16|
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16|
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16|
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16=> 3,
-            ImageFormat::G8_B8R8_2PLANE_420_UNORM|
-            ImageFormat::G8_B8R8_2PLANE_422_UNORM|
-            ImageFormat::G16_B16R16_2PLANE_420_UNORM|
-            ImageFormat::G16_B16R16_2PLANE_422_UNORM|
-            ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16|
-            ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16|
-            ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16|
-            ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16=> 2,
+            ImageFormat::G8_B8_R8_3PLANE_420_UNORM
+            | ImageFormat::G8_B8_R8_3PLANE_422_UNORM
+            | ImageFormat::G8_B8_R8_3PLANE_444_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_420_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_422_UNORM
+            | ImageFormat::G16_B16_R16_3PLANE_444_UNORM
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16 => 3,
+            ImageFormat::G8_B8R8_2PLANE_420_UNORM
+            | ImageFormat::G8_B8R8_2PLANE_422_UNORM
+            | ImageFormat::G16_B16R16_2PLANE_420_UNORM
+            | ImageFormat::G16_B16R16_2PLANE_422_UNORM
+            | ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16
+            | ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16
+            | ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 => 2,
             _ => 1,
         }
     }
 
-    pub fn  is_planer(&self) -> bool
-    {
+    pub fn is_planer(&self) -> bool {
         match self {
             ImageFormat::G8_B8R8_2PLANE_420_UNORM
             | ImageFormat::G8_B8R8_2PLANE_422_UNORM
@@ -320,7 +331,7 @@ impl ImageFormat {
             | ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16
             | ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16
             | ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16 => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -415,36 +426,92 @@ impl ImageFormat {
             ffi::vk::VkFormat_VK_FORMAT_A2B10G10R10_UINT_PACK32 => ImageFormat::R10G10B10A2_UINT,
             ffi::vk::VkFormat_VK_FORMAT_B10G11R11_UFLOAT_PACK32 => ImageFormat::B10G11R11_UFLOAT,
             ffi::vk::VkFormat_VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 => ImageFormat::E5B9G9R9_UFLOAT,
-            ffi::vk::VkFormat_VK_FORMAT_G16B16G16R16_422_UNORM => ImageFormat::G16B16G16R16_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_B16G16R16G16_422_UNORM => ImageFormat::B16G16R16G16_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16 => ImageFormat::R12X4G12X4B12X4A12X4_UNORM_4PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16 => ImageFormat::G12X4B12X4G12X4R12X4_422_UNORM_4PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16 => ImageFormat::B12X4G12X4R12X4G12X4_422_UNORM_4PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16 => ImageFormat::R10X6G10X6B10X6A10X6_UNORM_4PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16 => ImageFormat::G10X6B10X6G10X6R10X6_422_UNORM_4PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16 => ImageFormat::B10X6G10X6R10X6G10X6_422_UNORM_4PACK16,
+            ffi::vk::VkFormat_VK_FORMAT_G16B16G16R16_422_UNORM => {
+                ImageFormat::G16B16G16R16_422_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_B16G16R16G16_422_UNORM => {
+                ImageFormat::B16G16R16G16_422_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16 => {
+                ImageFormat::R12X4G12X4B12X4A12X4_UNORM_4PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16 => {
+                ImageFormat::G12X4B12X4G12X4R12X4_422_UNORM_4PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16 => {
+                ImageFormat::B12X4G12X4R12X4G12X4_422_UNORM_4PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16 => {
+                ImageFormat::R10X6G10X6B10X6A10X6_UNORM_4PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16 => {
+                ImageFormat::G10X6B10X6G10X6R10X6_422_UNORM_4PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16 => {
+                ImageFormat::B10X6G10X6R10X6G10X6_422_UNORM_4PACK16
+            }
             ffi::vk::VkFormat_VK_FORMAT_G8B8G8R8_422_UNORM => ImageFormat::G8B8G8R8_422_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_B8G8R8G8_422_UNORM => ImageFormat::B8G8R8G8_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM => ImageFormat::G8_B8_R8_3PLANE_420_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_420_UNORM => ImageFormat::G8_B8R8_2PLANE_420_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM => ImageFormat::G8_B8_R8_3PLANE_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_422_UNORM => ImageFormat::G8_B8R8_2PLANE_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM => ImageFormat::G8_B8_R8_3PLANE_444_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16 => ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16 => ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16 => ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 => ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 => ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16 => ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16 => ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16 => ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16 => ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 => ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16,
-            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM => ImageFormat::G16_B16_R16_3PLANE_420_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM => ImageFormat::G16_B16_R16_3PLANE_422_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM => ImageFormat::G16_B16_R16_3PLANE_444_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_420_UNORM => ImageFormat::G16_B16R16_2PLANE_420_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_422_UNORM => ImageFormat::G16_B16R16_2PLANE_422_UNORM,
+            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM => {
+                ImageFormat::G8_B8_R8_3PLANE_420_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_420_UNORM => {
+                ImageFormat::G8_B8R8_2PLANE_420_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM => {
+                ImageFormat::G8_B8_R8_3PLANE_422_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_422_UNORM => {
+                ImageFormat::G8_B8R8_2PLANE_422_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM => {
+                ImageFormat::G8_B8_R8_3PLANE_444_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16 => {
+                ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16 => {
+                ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16 => {
+                ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 => {
+                ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 => {
+                ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16 => {
+                ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16 => {
+                ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16 => {
+                ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16 => {
+                ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 => {
+                ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM => {
+                ImageFormat::G16_B16_R16_3PLANE_420_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM => {
+                ImageFormat::G16_B16_R16_3PLANE_422_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM => {
+                ImageFormat::G16_B16_R16_3PLANE_444_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_420_UNORM => {
+                ImageFormat::G16_B16R16_2PLANE_420_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_422_UNORM => {
+                ImageFormat::G16_B16R16_2PLANE_422_UNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_D16_UNORM => ImageFormat::D16_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_X8_D24_UNORM_PACK32 => ImageFormat::X8_D24_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_D32_SFLOAT => ImageFormat::D32_SFLOAT,
@@ -468,20 +535,32 @@ impl ImageFormat {
             ffi::vk::VkFormat_VK_FORMAT_BC6H_SFLOAT_BLOCK => ImageFormat::DXBC6H_SFLOAT,
             ffi::vk::VkFormat_VK_FORMAT_BC7_UNORM_BLOCK => ImageFormat::DXBC7_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_BC7_SRGB_BLOCK => ImageFormat::DXBC7_SRGB,
-            ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG => ImageFormat::PVRTC1_2BPP_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG => ImageFormat::PVRTC1_4BPP_UNORM,
+            ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG => {
+                ImageFormat::PVRTC1_2BPP_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG => {
+                ImageFormat::PVRTC1_4BPP_UNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_SRGB_BLOCK_IMG => ImageFormat::PVRTC1_2BPP_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG => ImageFormat::PVRTC1_4BPP_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK => ImageFormat::ETC2_R8G8B8_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK => ImageFormat::ETC2_R8G8B8A1_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK => ImageFormat::ETC2_R8G8B8A8_UNORM,
+            ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK => {
+                ImageFormat::ETC2_R8G8B8A1_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK => {
+                ImageFormat::ETC2_R8G8B8A8_UNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK => ImageFormat::ETC2_R8G8B8_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK => ImageFormat::ETC2_R8G8B8A1_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK => ImageFormat::ETC2_R8G8B8A8_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_EAC_R11_UNORM_BLOCK => ImageFormat::ETC2_EAC_R11_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_UNORM_BLOCK => ImageFormat::ETC2_EAC_R11G11_UNORM,
+            ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_UNORM_BLOCK => {
+                ImageFormat::ETC2_EAC_R11G11_UNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_EAC_R11_SNORM_BLOCK => ImageFormat::ETC2_EAC_R11_SNORM,
-            ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_SNORM_BLOCK => ImageFormat::ETC2_EAC_R11G11_SNORM,
+            ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_SNORM_BLOCK => {
+                ImageFormat::ETC2_EAC_R11G11_SNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_ASTC_4x4_UNORM_BLOCK => ImageFormat::ASTC_4x4_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_ASTC_4x4_SRGB_BLOCK => ImageFormat::ASTC_4x4_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_ASTC_5x4_UNORM_BLOCK => ImageFormat::ASTC_5x4_UNORM,
@@ -510,11 +589,38 @@ impl ImageFormat {
             ffi::vk::VkFormat_VK_FORMAT_ASTC_12x10_SRGB_BLOCK => ImageFormat::ASTC_12x10_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_ASTC_12x12_UNORM_BLOCK => ImageFormat::ASTC_12x12_UNORM,
             ffi::vk::VkFormat_VK_FORMAT_ASTC_12x12_SRGB_BLOCK => ImageFormat::ASTC_12x12_SRGB,
-            ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG => ImageFormat::PVRTC2_2BPP_UNORM,
-            ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG => ImageFormat::PVRTC2_4BPP_UNORM,
+            ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG => {
+                ImageFormat::PVRTC2_2BPP_UNORM
+            }
+            ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG => {
+                ImageFormat::PVRTC2_4BPP_UNORM
+            }
             ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG => ImageFormat::PVRTC2_2BPP_SRGB,
             ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG => ImageFormat::PVRTC2_4BPP_SRGB,
             _ => ImageFormat::UNDEFINED,
+        }
+    }
+
+    pub fn to_vk_aspect_mask(&self, include_stencil_bit: bool) -> ffi::vk::VkImageAspectFlagBits{
+        match self {
+            // Depth
+            ImageFormat::D16_UNORM | ImageFormat::X8_D24_UNORM | ImageFormat::D32_SFLOAT => {
+                ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_DEPTH_BIT
+            },
+            // Stencil
+            ImageFormat::S8_UINT => ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_STENCIL_BIT,
+
+            ImageFormat::D16_UNORM_S8_UINT
+            | ImageFormat::D24_UNORM_S8_UINT
+            | ImageFormat::D32_SFLOAT_S8_UINT => {
+                ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_DEPTH_BIT
+                    | (if include_stencil_bit {
+                        ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_STENCIL_BIT
+                    } else {
+                        0
+                    })
+            },
+            _ => ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_COLOR_BIT,
         }
     }
 
@@ -612,36 +718,92 @@ impl ImageFormat {
             ImageFormat::B10G11R11_UFLOAT => ffi::vk::VkFormat_VK_FORMAT_B10G11R11_UFLOAT_PACK32,
             ImageFormat::E5B9G9R9_UFLOAT => ffi::vk::VkFormat_VK_FORMAT_E5B9G9R9_UFLOAT_PACK32,
 
-            ImageFormat::G16B16G16R16_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16B16G16R16_422_UNORM,
-            ImageFormat::B16G16R16G16_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_B16G16R16G16_422_UNORM,
-            ImageFormat::R12X4G12X4B12X4A12X4_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16,
-            ImageFormat::G12X4B12X4G12X4R12X4_422_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16,
-            ImageFormat::B12X4G12X4R12X4G12X4_422_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16,
-            ImageFormat::R10X6G10X6B10X6A10X6_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16,
-            ImageFormat::G10X6B10X6G10X6R10X6_422_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16,
-            ImageFormat::B10X6G10X6R10X6G10X6_422_UNORM_4PACK16 => ffi::vk::VkFormat_VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16,
+            ImageFormat::G16B16G16R16_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16B16G16R16_422_UNORM
+            }
+            ImageFormat::B16G16R16G16_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_B16G16R16G16_422_UNORM
+            }
+            ImageFormat::R12X4G12X4B12X4A12X4_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16
+            }
+            ImageFormat::G12X4B12X4G12X4R12X4_422_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16
+            }
+            ImageFormat::B12X4G12X4R12X4G12X4_422_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16
+            }
+            ImageFormat::R10X6G10X6B10X6A10X6_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16
+            }
+            ImageFormat::G10X6B10X6G10X6R10X6_422_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16
+            }
+            ImageFormat::B10X6G10X6R10X6G10X6_422_UNORM_4PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16
+            }
             ImageFormat::G8B8G8R8_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8B8G8R8_422_UNORM,
             ImageFormat::B8G8R8G8_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_B8G8R8G8_422_UNORM,
-            ImageFormat::G8_B8_R8_3PLANE_420_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
-            ImageFormat::G8_B8R8_2PLANE_420_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-            ImageFormat::G8_B8_R8_3PLANE_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM,
-            ImageFormat::G8_B8R8_2PLANE_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
-            ImageFormat::G8_B8_R8_3PLANE_444_UNORM => ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM,
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16,
-            ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16,
-            ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
-            ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16,
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16,
-            ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16,
-            ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
-            ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 => ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16,
-            ImageFormat::G16_B16_R16_3PLANE_420_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM,
-            ImageFormat::G16_B16_R16_3PLANE_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM,
-            ImageFormat::G16_B16_R16_3PLANE_444_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM,
-            ImageFormat::G16_B16R16_2PLANE_420_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_420_UNORM,
-            ImageFormat::G16_B16R16_2PLANE_422_UNORM => ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_422_UNORM,
+            ImageFormat::G8_B8_R8_3PLANE_420_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM
+            }
+            ImageFormat::G8_B8R8_2PLANE_420_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_420_UNORM
+            }
+            ImageFormat::G8_B8_R8_3PLANE_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM
+            }
+            ImageFormat::G8_B8R8_2PLANE_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G8_B8R8_2PLANE_422_UNORM
+            }
+            ImageFormat::G8_B8_R8_3PLANE_444_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM
+            }
+            ImageFormat::G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16
+            }
+            ImageFormat::G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16
+            }
+            ImageFormat::G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16
+            }
+            ImageFormat::G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16
+            }
+            ImageFormat::G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16
+            }
+            ImageFormat::G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16
+            }
+            ImageFormat::G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16
+            }
+            ImageFormat::G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16
+            }
+            ImageFormat::G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16
+            }
+            ImageFormat::G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 => {
+                ffi::vk::VkFormat_VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16
+            }
+            ImageFormat::G16_B16_R16_3PLANE_420_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM
+            }
+            ImageFormat::G16_B16_R16_3PLANE_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM
+            }
+            ImageFormat::G16_B16_R16_3PLANE_444_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM
+            }
+            ImageFormat::G16_B16R16_2PLANE_420_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_420_UNORM
+            }
+            ImageFormat::G16_B16R16_2PLANE_422_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_G16_B16R16_2PLANE_422_UNORM
+            }
 
             ImageFormat::D16_UNORM => ffi::vk::VkFormat_VK_FORMAT_D16_UNORM,
             ImageFormat::X8_D24_UNORM => ffi::vk::VkFormat_VK_FORMAT_X8_D24_UNORM_PACK32,
@@ -666,20 +828,32 @@ impl ImageFormat {
             ImageFormat::DXBC6H_SFLOAT => ffi::vk::VkFormat_VK_FORMAT_BC6H_SFLOAT_BLOCK,
             ImageFormat::DXBC7_UNORM => ffi::vk::VkFormat_VK_FORMAT_BC7_UNORM_BLOCK,
             ImageFormat::DXBC7_SRGB => ffi::vk::VkFormat_VK_FORMAT_BC7_SRGB_BLOCK,
-            ImageFormat::PVRTC1_2BPP_UNORM => ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG,
-            ImageFormat::PVRTC1_4BPP_UNORM => ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG,
+            ImageFormat::PVRTC1_2BPP_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG
+            }
+            ImageFormat::PVRTC1_4BPP_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG
+            }
             ImageFormat::PVRTC1_2BPP_SRGB => ffi::vk::VkFormat_VK_FORMAT_PVRTC1_2BPP_SRGB_BLOCK_IMG,
             ImageFormat::PVRTC1_4BPP_SRGB => ffi::vk::VkFormat_VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG,
             ImageFormat::ETC2_R8G8B8_UNORM => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,
-            ImageFormat::ETC2_R8G8B8A1_UNORM => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK,
-            ImageFormat::ETC2_R8G8B8A8_UNORM => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,
+            ImageFormat::ETC2_R8G8B8A1_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK
+            }
+            ImageFormat::ETC2_R8G8B8A8_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK
+            }
             ImageFormat::ETC2_R8G8B8_SRGB => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK,
             ImageFormat::ETC2_R8G8B8A1_SRGB => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK,
             ImageFormat::ETC2_R8G8B8A8_SRGB => ffi::vk::VkFormat_VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,
             ImageFormat::ETC2_EAC_R11_UNORM => ffi::vk::VkFormat_VK_FORMAT_EAC_R11_UNORM_BLOCK,
-            ImageFormat::ETC2_EAC_R11G11_UNORM => ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_UNORM_BLOCK,
+            ImageFormat::ETC2_EAC_R11G11_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_UNORM_BLOCK
+            }
             ImageFormat::ETC2_EAC_R11_SNORM => ffi::vk::VkFormat_VK_FORMAT_EAC_R11_SNORM_BLOCK,
-            ImageFormat::ETC2_EAC_R11G11_SNORM => ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_SNORM_BLOCK,
+            ImageFormat::ETC2_EAC_R11G11_SNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_EAC_R11G11_SNORM_BLOCK
+            }
             ImageFormat::ASTC_4x4_UNORM => ffi::vk::VkFormat_VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
             ImageFormat::ASTC_4x4_SRGB => ffi::vk::VkFormat_VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
             ImageFormat::ASTC_5x4_UNORM => ffi::vk::VkFormat_VK_FORMAT_ASTC_5x4_UNORM_BLOCK,
@@ -708,8 +882,12 @@ impl ImageFormat {
             ImageFormat::ASTC_12x10_SRGB => ffi::vk::VkFormat_VK_FORMAT_ASTC_12x10_SRGB_BLOCK,
             ImageFormat::ASTC_12x12_UNORM => ffi::vk::VkFormat_VK_FORMAT_ASTC_12x12_UNORM_BLOCK,
             ImageFormat::ASTC_12x12_SRGB => ffi::vk::VkFormat_VK_FORMAT_ASTC_12x12_SRGB_BLOCK,
-            ImageFormat::PVRTC2_2BPP_UNORM => ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG,
-            ImageFormat::PVRTC2_4BPP_UNORM => ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG,
+            ImageFormat::PVRTC2_2BPP_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG
+            }
+            ImageFormat::PVRTC2_4BPP_UNORM => {
+                ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG
+            }
             ImageFormat::PVRTC2_2BPP_SRGB => ffi::vk::VkFormat_VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG,
             ImageFormat::PVRTC2_4BPP_SRGB => ffi::vk::VkFormat_VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG,
             _ => ffi::vk::VkFormat_VK_FORMAT_UNDEFINED,

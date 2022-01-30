@@ -5,24 +5,29 @@ mod fence;
 mod queue;
 mod renderer;
 mod types;
+mod buffer;
+
+pub use buffer::*;
 
 use crate::{
     error::RendererError::VulkanError,
     ffi,
-    types::QueueType,
+    types::{DescriptorType, QueueType, ResourceMemoryUsage, SampleCount},
     vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
     APIType, Buffer, Command, CommandPool, DescriptorIndexMap, Fence, FenceStatus, GPUCommonInfo,
     Queue, RenderContext, RenderTarget, RendererResult, RootSignature, Sampler, Semaphore, Shader,
     SwapChain, Texture,
 };
+use forge_image_format::ImageFormat;
 use std::{
     f32::consts::E,
+    ffi::c_void,
     os::{linux::raw::stat, raw::c_float},
     ptr, sync,
     sync::{Arc, Mutex},
 };
-use forge_image_format::ImageFormat;
-use crate::types::SampleCount;
+use std::ffi::CString;
+use crate::types::{ShaderStage, ShaderStageFlags};
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -96,13 +101,11 @@ impl<'a> CommandPool for VulkanCommandPool<'a> {
     }
 }
 
-pub struct VulkanRootSignature {}
+pub struct VulkanRootSignature {
+
+}
 
 impl RootSignature for VulkanRootSignature {}
-
-pub struct VulkanBuffer {}
-
-impl Buffer for VulkanBuffer {}
 
 pub struct VulkanCommand<'a> {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
@@ -161,11 +164,9 @@ pub struct VulkanRenderTarget {
     pub(in crate::vulkan) sample_count: SampleCount,
     // vr_multiview: bool,
     // VRFoveatedRendering: bool,
-
 }
 
-impl RenderTarget for VulkanRenderTarget {
-}
+impl RenderTarget for VulkanRenderTarget {}
 
 pub struct VulkanSampler {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
@@ -196,7 +197,34 @@ pub struct VulkanDescriptorIndexMap {}
 
 impl DescriptorIndexMap for VulkanDescriptorIndexMap {}
 
-pub struct VulkanShader {}
+pub struct VulkanShader {
+    pub(in crate::vulkan) render: Arc<VulkanRenderer>,
+    pub(in crate::vulkan) stages: ShaderStageFlags,
+
+    pub(in crate::vulkan) shader_module: Vec<Option<(CString, ffi::vk::VkShaderModule)>>,
+}
+
+impl Drop for VulkanShader {
+    fn drop(&mut self) {
+        match Arc::get_mut(&mut self.render) {
+            None => {
+                assert!(false, "failed to correctly dispose of shader");
+            }
+            Some(renderer) => {
+                for module in &self.shader_module {
+                    match module {
+                        Some((str, mut shader) ) => {
+                            unsafe {
+                                ffi::vk::vkDestroyShaderModule(renderer.device, shader, ptr::null_mut());
+                            }
+                        },
+                        None => {}
+                    }
+                }
+            }
+        }
+    }
+}
 
 impl Shader for VulkanShader {}
 
@@ -208,8 +236,24 @@ pub struct VulkanTexture {
     /// Opaque handle used by shaders for doing read/write operations on the texture
     pub vk_srv_stencil_descriptor: ffi::vk::VkImageView,
     /// Native handle of the underlying resource
-    pub vk_image: ffi::vk::VkImageView,
+    pub vk_image: ffi::vk::VkImage,
 
+    pub vma_memory: ffi::vk::VmaAllocation,
+    pub vk_device_memory: ffi::vk::VkDeviceMemory,
+
+    /// Current state of the buffer
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+    pub mip_levels: u32,
+    pub array_size_minus_one: u32,
+    pub format: ImageFormat,
+    // Flags specifying which aspects (COLOR,DEPTH,STENCIL) are included in the pVkImageView
+    pub aspect_mask: u32,
+    pub node_index: u32,
+    // This value will be false if the underlying resource is not owned by the texture (swapchain textures,...)
+    pub uav: bool,
+    // This value will be false if the underlying resource is not owned by the texture (swapchain textures,...)
     pub own_image: bool,
 }
 
@@ -346,4 +390,6 @@ pub struct VulkanRenderer {
     pub(in crate::vulkan) used_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
 
     pub(in crate::vulkan) me: sync::Weak<VulkanRenderer>,
+
+    pub(in crate::vulkan) vma_allocator: ffi::vk::VmaAllocator,
 }

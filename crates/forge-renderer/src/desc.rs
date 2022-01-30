@@ -1,14 +1,15 @@
 use crate::{
     types::{
-        AddressMode, CompareMode, DescriptorType, FilterType, MipMapMode, QueueFlag, QueuePriority,
-        QueueType, ResourceMemoryUsage,
+        AddressMode, BufferCreationFlag, CompareMode, DescriptorType, FilterType,
+        IndirectArgumentType, MipMapMode, QueueFlag, QueuePriority, QueueType, ResourceMemoryUsage,
+        ResourceState, SampleCount, TextureCreationFlags,
     },
     Api,
 };
 use forge_image_format::ImageFormat;
 use raw_window_handle::HasRawWindowHandle;
 use std::ffi::{c_void, CStr, CString};
-use crate::types::{IndirectArgumentType, ResourceState, SampleCount, TextureCreationFlags};
+use crate::types::{RootSignatureFlags, ShaderStageFlags};
 
 pub struct VulkanRenderDesc {
     pub instance_layers: Vec<CString>,
@@ -67,7 +68,9 @@ pub struct PipelineDesc<'a, T: Api> {
 }
 
 pub struct RootSignatureDesc<'a, T: Api> {
-    shader: &'a Vec<T::Shader>,
+    pub shader: Vec<&'a T::Shader>,
+    pub sampler: Vec<(CString, &'a T::Sampler)>,
+    pub flags: RootSignatureFlags
 }
 
 pub struct SamplerFormatDesc {}
@@ -90,12 +93,16 @@ pub struct BufferDesc {
 
     pub debug_name: CString,
 
+    pub first_element: u64,
+    pub structure_stride: u64,
+    pub element_count: u64,
+
     // Flags specifying the suitable usage of this buffer (Uniform buffer, Vertex Buffer, Index Buffer,...)
     pub descriptors: DescriptorType,
-
+    pub flags: BufferCreationFlag,
     pub format: ImageFormat,
-
     pub memory_usage: ResourceMemoryUsage,
+    pub node_index: u32,
 }
 
 pub struct QueueDesc {
@@ -150,7 +157,7 @@ pub struct TextureDesc {
     // GPU indices to share this texture
     pub shared_node_indices: Vec<u32>,
     // GPU which will own this texture
-    pub node_index: u32
+    pub node_index: u32,
 }
 
 pub struct RenderTargetDesc {
@@ -185,5 +192,17 @@ pub struct RenderTargetDesc {
     // GPU indices to share this texture
     pub shared_node_indices: Vec<u32>,
     // GPU which will own this texture
-    pub node_index: u32
+    pub node_index: u32,
+}
+
+pub struct BinaryShaderStageDesc {
+    pub byte_code: *const u32,
+    pub byte_code_size: u32,
+    pub entry_point_name: CString
+}
+
+pub struct BinaryShaderDesc {
+    pub stages: ShaderStageFlags,
+    pub shaders: Vec<BinaryShaderStageDesc>,
+    pub constants: Vec<CString>
 }

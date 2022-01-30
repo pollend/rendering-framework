@@ -63,18 +63,60 @@ pub enum IndirectArgumentType {
     VertexBuffer,
     IndexBuffer,
     Constant,
-    DescriptorTable, // only for vulkan
-    Pipeline, // only for vulkan now, probably will add to dx when it comes to xbox
+    DescriptorTable,    // only for vulkan
+    Pipeline,           // only for vulkan now, probably will add to dx when it comes to xbox
     ConstantBufferView, // only for dx
     ShaderResourceView, // only for dx
     UnorderedAccessView, // only for dx
-    // #if defined(METAL)
-    // INDIRECT_COMMAND_BUFFER,            // metal ICB
-    // INDIRECT_COMMAND_BUFFER_RESET,      // metal ICB reset
-    // INDIRECT_COMMAND_BUFFER_OPTIMIZE    // metal ICB optimization
-    // #endif
-    // } IndirectArgumentType;
+                        // #if defined(METAL)
+                        // INDIRECT_COMMAND_BUFFER,            // metal ICB
+                        // INDIRECT_COMMAND_BUFFER_RESET,      // metal ICB reset
+                        // INDIRECT_COMMAND_BUFFER_OPTIMIZE    // metal ICB optimization
+                        // #endif
+                        // } IndirectArgumentType;
 }
+
+#[derive(PartialEq, Copy, Clone)]
+pub enum ShaderStage {
+    Vertex,
+    TesselationControl,
+    TesselationEvaluation,
+    Geometry,
+    Fragment,
+    Compute,
+    Raytracing,
+    Count
+}
+
+bitflags! {
+    // tessellation
+    pub struct ShaderStageFlags: u16 {
+        const STAGE_NONE = 0x0000;
+        const STAGE_VERTEX = 1 << (ShaderStage::Vertex as u32);
+        const STAGE_TESSELLATION_CONTROL =   1 << (ShaderStage::TesselationControl as u32);
+        const STAGE_TESSELLATION_EVALUATION =  1 << (ShaderStage::TesselationEvaluation as u32);
+        const STAGE_GEOMETRY = 1 << (ShaderStage::Geometry as u32);
+        const STAGE_FRAGMENT =  1 << (ShaderStage::Fragment as u32);
+        const STAGE_COMPUTE =  1 << (ShaderStage::Compute as u32);
+        const STAGE_RAYTRACING =  1 << (ShaderStage::Raytracing as u32);
+
+        const STAGE_ALL_GRAPHICS = (
+            Self::STAGE_VERTEX.bits |
+            Self::STAGE_TESSELLATION_CONTROL.bits |
+            Self::STAGE_TESSELLATION_EVALUATION.bits |
+            Self::STAGE_GEOMETRY.bits |
+            Self::STAGE_FRAGMENT.bits
+        );
+    }
+}
+
+bitflags! {
+    pub struct RootSignatureFlags: u8 {
+        const NONE_FLAG = 0x0;
+        const LOCAL_FLAG = 0x1;
+    }
+}
+
 
 bitflags! {
     pub struct ResourceState: u32 {
@@ -143,7 +185,6 @@ pub enum GPUPresetLevel {
     PresetCount,
 }
 
-
 #[derive(PartialEq, Copy, Clone)]
 pub enum SampleCount {
     SampleCount1 = 1,
@@ -175,7 +216,6 @@ bitflags! {
          const MAX_QUEUE_FLAG = 0xFFFFFFFF;
     }
 }
-
 
 bitflags! {
     pub struct TextureCreationFlags: u32 {
@@ -213,6 +253,26 @@ bitflags! {
         const TEXTURE_CREATION_FLAG_VR_MULTIVIEW = 0x4000;
         /// Binds the FFR fragment density if this texture is used as a render target.
         const TEXTURE_CREATION_FLAG_VR_FOVEATED_RENDERING = 0x8000;
+    }
+}
+
+bitflags! {
+    pub struct BufferCreationFlag: u32 {
+            /// Default flag (Buffer will use aliased memory, buffer will not be cpu accessible until mapBuffer is called)
+            const BUFFER_CREATION_FLAG_NONE = 0x01;
+            /// Buffer will allocate its own memory (COMMITTED resource)
+            const BUFFER_CREATION_FLAG_OWN_MEMORY_BIT = 0x02;
+            /// Buffer will be persistently mapped
+            const BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT = 0x04;
+            /// Use ESRAM to store this buffer
+            const BUFFER_CREATION_FLAG_ESRAM = 0x08;
+            /// Flag to specify not to allocate descriptors for the resource
+            const BUFFER_CREATION_FLAG_NO_DESCRIPTOR_VIEW_CREATION = 0x10;
+
+            // vulkan flags
+            /* Memory Host Flags */
+            const BUFFER_CREATION_FLAG_HOST_VISIBLE = 0x100;
+            const BUFFER_CREATION_FLAG_HOST_COHERENT = 0x200;
     }
 }
 

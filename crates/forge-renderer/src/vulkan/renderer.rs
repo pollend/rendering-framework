@@ -1,18 +1,23 @@
-use crate::{check_vk_result, desc::{CmdDesc, RenderDescImp}, error::RendererError::VulkanError, ffi, types::{CompareMode, DescriptorType, FilterType, MipMapMode, QueueType, ResourceMemoryUsage}, vulkan::{
+use crate::{check_vk_result, desc::{CmdDesc, RenderDescImp}, error::{RendererError, RendererError::VulkanError}, ffi, ffi::vk, types::{
+    BufferCreationFlag, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType,
+    ResourceMemoryUsage, ResourceState, SampleCount, TextureCreationFlags,
+}, vulkan::{
     device::VulkanGPUInfo,
     types::{
         VulkanSupportedFeatures, GLOBAL_INSTANCE_EXTENSIONS, GLOBAL_WANTED_DEVICE_EXTENSIONS,
         MAX_QUEUE_COUNT, MAX_QUEUE_FAMILIES, MAX_QUEUE_FLAGS,
     },
-    VulkanBuffer, VulkanCommand, VulkanCommandPool, VulkanPipeline, VulkanQueue,
+    VulkanCommand, VulkanCommandPool, VulkanPipeline, VulkanQueue,
     VulkanRenderTarget, VulkanRenderer, VulkanSampler, VulkanSemaphore, VulkanSwapChain,
-}, BufferDesc, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, Renderer, RendererResult, RootSignatureDesc, SamplerDesc, SwapChainDesc, VulkanAPI, RenderTargetDesc, TextureDesc};
-use forge_image_format::ImageFormat;
+    VulkanTexture,
+}, BufferDesc, CmdPoolDesc, GPUCommonInfo, QueueDesc, RenderDesc, RenderTargetDesc, Renderer, RendererResult, RootSignatureDesc, SamplerDesc, SwapChainDesc, TextureDesc, VulkanAPI, BinaryShaderDesc};
+use forge_image_format::{ImageFormat, ImageFormat::UNDEFINED};
+use forge_math::round_up;
 use log::{error, info, log, warn};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::{
     borrow::{Borrow, BorrowMut},
-    cmp::{min, Ordering},
+    cmp::{max, min, Ordering},
     collections::HashSet,
     ffi::{c_void, CStr, CString},
     mem,
@@ -23,11 +28,107 @@ use std::{
     thread::sleep,
     u32,
 };
-use std::cmp::max;
-use crate::error::RendererError;
-use crate::ffi::vk;
-use crate::types::{ResourceState, SampleCount, TextureCreationFlags};
-use crate::vulkan::VulkanTexture;
+use winit::event::VirtualKeyCode::N;
+use crate::desc::BinaryShaderStageDesc;
+use crate::types::{ShaderStage, ShaderStageFlags};
+use crate::vulkan::buffer::VulkanBuffer;
+use crate::vulkan::{VulkanRootSignature, VulkanShader};
+
+use spirv_cross::{spirv, glsl};
+use spirv_cross::spirv::ShaderResources;
+
+struct MemoryRequirementResults {
+    requirement: ffi::vk::VkMemoryRequirements,
+    planar_offset: Vec<u64>,
+}
+
+fn util_get_planar_vk_image_memory_requirement(
+    device: ffi::vk::VkDevice,
+    image: ffi::vk::VkImage,
+    num_planes: u32,
+) -> MemoryRequirementResults {
+    let mut results = MemoryRequirementResults {
+        requirement: ffi::vk::VkMemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memoryTypeBits: 0,
+        },
+        planar_offset: vec![],
+    };
+
+    let mut image_plane_mem_req_info2 = ffi::vk::VkImageMemoryRequirementsInfo2 {
+        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2_KHR,
+        pNext: ptr::null_mut(),
+        image,
+    };
+    let mut image_plane_mem_req_info = ffi::vk::VkImagePlaneMemoryRequirementsInfo {
+        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
+        pNext: (&image_plane_mem_req_info2 as *const ffi::vk::VkImageMemoryRequirementsInfo2)
+            as *mut c_void,
+        planeAspect: 0,
+    };
+
+    let mut mem_dedicated_req = ffi::vk::VkMemoryDedicatedRequirements {
+        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+        pNext: ptr::null_mut(),
+        prefersDedicatedAllocation: 0,
+        requiresDedicatedAllocation: 0,
+    };
+
+    let mut mem_req_2 = ffi::vk::VkMemoryRequirements2 {
+        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+        pNext: (&mem_dedicated_req as *const ffi::vk::VkMemoryDedicatedRequirements) as *mut c_void,
+        memoryRequirements: ffi::vk::VkMemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memoryTypeBits: 0,
+        },
+    };
+
+    unsafe {
+        for i in 0..num_planes {
+            image_plane_mem_req_info.planeAspect =
+                (ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_PLANE_0_BIT << 1)
+                    as ffi::vk::VkImageAspectFlagBits;
+            ffi::vk::vkGetImageMemoryRequirements2(
+                device,
+                &mut image_plane_mem_req_info2,
+                &mut mem_req_2,
+            );
+
+            results.planar_offset.push(results.requirement.size);
+            results.requirement.alignment = max(
+                mem_req_2.memoryRequirements.alignment,
+                results.requirement.alignment,
+            );
+            results.requirement.size += round_up(
+                mem_req_2.memoryRequirements.size,
+                mem_req_2.memoryRequirements.alignment,
+            );
+            results.requirement.memoryTypeBits |= mem_req_2.memoryRequirements.memoryTypeBits;
+        }
+    }
+
+    results
+}
+
+fn util_get_memory_type(
+    type_bits: u32,
+    memory_properties: &ffi::vk::VkPhysicalDeviceMemoryProperties,
+    properties: ffi::vk::VkMemoryPropertyFlags,
+) -> Option<u32> {
+    let mut type_bits_test = type_bits;
+    for i in 0..memory_properties.memoryTypeCount {
+        if (type_bits_test & 1) == 1 {
+            if (memory_properties.memoryTypes[i as usize].propertyFlags & properties) == properties
+            {
+                return Some(i);
+            }
+        }
+        type_bits_test >>= 1;
+    }
+    return None;
+}
 
 struct QueueFamilyResult {
     properties: ffi::vk::VkQueueFamilyProperties,
@@ -35,20 +136,27 @@ struct QueueFamilyResult {
     queue_index: u32,
 }
 
-fn util_vk_image_usage_to_format_features(usage: ffi::vk::VkImageUsageFlags) -> ffi::vk::VkFormatFeatureFlags {
+fn util_vk_image_usage_to_format_features(
+    usage: ffi::vk::VkImageUsageFlags,
+) -> ffi::vk::VkFormatFeatureFlags {
     let mut result: ffi::vk::VkFormatFeatureFlags = 0;
-    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT) {
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT
+        == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT)
+    {
         result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
     }
-    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT)
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT
+        == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT)
     {
         result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     }
-    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+        == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
     {
         result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
     }
-    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+    if ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+        == (usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
     {
         result |= ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
@@ -678,48 +786,6 @@ unsafe fn init_device(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Rende
 }
 
 impl Renderer<VulkanAPI> for VulkanRenderer {
-    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<super::VulkanBuffer> {
-        assert!(desc.size > 0);
-        assert!(self.device != ptr::null_mut());
-        assert!(!self.active_gpu_common_info.is_none());
-
-        let common_info = self.active_gpu_common_info.as_ref().unwrap();
-
-        let mut allocated_size = desc.size;
-
-        if desc
-            .descriptors
-            .contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        {
-            let min_alignment = common_info.uniform_buffer_alignment;
-            allocated_size = forge_math::round_up(allocated_size, min_alignment as u64);
-        }
-        let mut add_info = ffi::vk::VkBufferCreateInfo {
-            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            pNext: ptr::null_mut(),
-            flags: 0,
-            size: allocated_size,
-            usage: desc
-                .descriptors
-                .to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED),
-            sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
-            queueFamilyIndexCount: 0,
-            pQueueFamilyIndices: ptr::null_mut(),
-        };
-
-        if desc.memory_usage == ResourceMemoryUsage::GpuOnly
-            || desc.memory_usage == ResourceMemoryUsage::Unknown
-        {
-            add_info.usage |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        }
-
-        todo!()
-    }
-
-    unsafe fn drop_buffer(&self, buffer: &mut super::VulkanBuffer) {
-        todo!()
-    }
-
     unsafe fn init(_name: &CStr, desc: &RenderDesc) -> RendererResult<Arc<VulkanRenderer>> {
         let mut renderer = Arc::new_cyclic(|me| VulkanRenderer {
             instance: ptr::null_mut(),
@@ -735,6 +801,8 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             transfer_queue_family_index: 0,
             compute_queue_family_index: 0,
             me: me.clone(),
+
+            vma_allocator: ptr::null_mut(),
         });
         let mut mut_render = Arc::get_mut(&mut renderer).unwrap();
         // initialize instance
@@ -753,6 +821,65 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         mut_render.graphics_queue_family_index = compute_queue.family_index;
         mut_render.graphics_queue_family_index = transfer_queue.family_index;
 
+        /************************************************************************/
+        // Memory allocator
+        /************************************************************************/
+
+        let mut vma_functions = ffi::vk::VmaVulkanFunctions {
+            vkAllocateMemory: Some(ffi::vk::vkAllocateMemory),
+            vkBindBufferMemory: Some(ffi::vk::vkBindBufferMemory),
+            vkBindImageMemory: Some(ffi::vk::vkBindImageMemory),
+            vkCreateBuffer: Some(ffi::vk::vkCreateBuffer),
+            vkCreateImage: Some(ffi::vk::vkCreateImage),
+            vkDestroyBuffer: Some(ffi::vk::vkDestroyBuffer),
+            vkDestroyImage: Some(ffi::vk::vkDestroyImage),
+            vkFreeMemory: Some(ffi::vk::vkFreeMemory),
+            vkGetBufferMemoryRequirements: Some(ffi::vk::vkGetBufferMemoryRequirements),
+            vkGetBufferMemoryRequirements2KHR: Some(ffi::vk::vkGetBufferMemoryRequirements2KHR),
+            vkGetImageMemoryRequirements: Some(ffi::vk::vkGetImageMemoryRequirements),
+            vkGetImageMemoryRequirements2KHR: Some(ffi::vk::vkGetImageMemoryRequirements2KHR),
+            vkGetPhysicalDeviceMemoryProperties: Some(ffi::vk::vkGetPhysicalDeviceMemoryProperties),
+            vkGetPhysicalDeviceProperties: Some(ffi::vk::vkGetPhysicalDeviceProperties),
+            vkMapMemory: Some(ffi::vk::vkMapMemory),
+            vkUnmapMemory: Some(ffi::vk::vkUnmapMemory),
+            vkFlushMappedMemoryRanges: Some(ffi::vk::vkFlushMappedMemoryRanges),
+            vkInvalidateMappedMemoryRanges: Some(ffi::vk::vkInvalidateMappedMemoryRanges),
+            vkCmdCopyBuffer: Some(ffi::vk::vkCmdCopyBuffer),
+            vkBindBufferMemory2KHR: None,
+            vkBindImageMemory2KHR: None,
+            vkGetDeviceProcAddr: None,
+            vkGetInstanceProcAddr: None,
+            vkGetPhysicalDeviceMemoryProperties2KHR: None,
+        };
+        let mut create_info = ffi::vk::VmaAllocatorCreateInfo {
+            flags: {
+                let mut result: ffi::vk::VmaAllocatorCreateFlags = 0;
+                if mut_render
+                    .features
+                    .contains(VulkanSupportedFeatures::DEDICATED_ALLOCATION_EXTENSION)
+                {
+                    result |= ffi::vk::VmaAllocatorCreateFlagBits_VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
+                }
+                if mut_render
+                    .features
+                    .contains(VulkanSupportedFeatures::BUFFER_DEVICE_ADDRESS_EXTENSION)
+                {
+                    result |= ffi::vk::VmaAllocatorCreateFlagBits_VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+                }
+                result
+            },
+            physicalDevice: mut_render.active_gpu,
+            device: mut_render.device,
+            preferredLargeHeapBlockSize: 0,
+            pAllocationCallbacks: ptr::null_mut(),
+            pDeviceMemoryCallbacks: ptr::null_mut(),
+            pHeapSizeLimit: ptr::null_mut(),
+            pVulkanFunctions: &mut vma_functions,
+            instance: mut_render.instance,
+            vulkanApiVersion: 0,
+            pTypeExternalMemoryHandleTypes: ptr::null_mut(),
+        };
+        ffi::vk::vmaCreateAllocator(&mut create_info, &mut mut_render.vma_allocator);
         Ok(renderer)
     }
 
@@ -814,38 +941,6 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(semaphore)
     }
 
-    unsafe fn add_queue(&mut self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
-        let node_index = 0;
-        let queue_result = util_find_queue_family_index(self, node_index, desc.queue_type);
-        self.used_queue_count[node_index as usize][queue_result.properties.queueFlags as usize] +=
-            1;
-
-        let mut result = VulkanQueue {
-            render: self.me.clone().upgrade().unwrap(),
-            queue: ptr::null_mut(),
-
-            submission_mutex: Mutex::new(()),
-            family_index: queue_result.family_index,
-            queue_index: queue_result.queue_index,
-            queue_flag: queue_result.properties.queueFlags,
-
-            queue_type: desc.queue_type,
-            node_index: desc.node_index,
-        };
-
-        ffi::vk::vkGetDeviceQueue(
-            self.device,
-            result.family_index,
-            result.queue_index,
-            &mut result.queue,
-        );
-        assert!(result.queue != ptr::null_mut());
-        Ok(result)
-    }
-
-    unsafe fn drop_swap_chain(&self) {
-        todo!()
-    }
     unsafe fn add_cmd_pool<'a>(
         &self,
         desc: &CmdPoolDesc<'a, VulkanAPI>,
@@ -911,101 +1006,33 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         Ok(cmd)
     }
 
-    unsafe fn add_render_target(&self, desc: &RenderTargetDesc) -> RendererResult<VulkanRenderTarget> {
+    unsafe fn add_queue(&mut self, desc: &QueueDesc) -> RendererResult<super::VulkanQueue> {
+        let node_index = 0;
+        let queue_result = util_find_queue_family_index(self, node_index, desc.queue_type);
+        self.used_queue_count[node_index as usize][queue_result.properties.queueFlags as usize] +=
+            1;
 
-        let is_depth = desc.format.is_depth_only() || desc.format.is_depth_and_stencil_only();
-        assert!(!(is_depth && desc.descriptors.contains( DescriptorType::DESCRIPTOR_TYPE_RW_BUFFER)), "Cannot use depth stencil as UAV");
+        let mut result = VulkanQueue {
+            render: self.me.clone().upgrade().unwrap(),
+            queue: ptr::null_mut(),
 
-        let mip_levels = max(desc.mip_levels, 1);
-        let array_size = desc.array_size;
-        let depth_or_array_size = array_size * desc.depth;
-        let mut num_rtvs = desc.mip_levels;
+            submission_mutex: Mutex::new(()),
+            family_index: queue_result.family_index,
+            queue_index: queue_result.queue_index,
+            queue_flag: queue_result.properties.queueFlags,
 
-        if desc.descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_ARRAY_SLICES) ||
-            desc.descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_DEPTH_SLICES) {
-            num_rtvs *= depth_or_array_size;
-        }
-
-
-
-        todo!()
-    }
-
-    unsafe fn remove_render_target(&self, _target: &mut VulkanRenderTarget) {
-        todo!()
-    }
-
-    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<super::VulkanSampler> {
-        assert!(self.device != ptr::null_mut());
-
-        let mut add_info = ffi::vk::VkSamplerCreateInfo {
-            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            pNext: ptr::null_mut(),
-            flags: 0,
-            magFilter: desc.mag_filter.to_vk_filter(),
-            minFilter: desc.min_filter.to_vk_filter(),
-            mipmapMode: desc.mode.to_vk_map_map_mode(),
-            addressModeU: desc.address_u.to_vk_address_mode(),
-            addressModeV: desc.address_v.to_vk_address_mode(),
-            addressModeW: desc.address_w.to_vk_address_mode(),
-            mipLodBias: desc.mip_load_bias,
-            anisotropyEnable: if desc.max_anisotropy > 0.0 {
-                ffi::vk::VK_TRUE
-            } else {
-                ffi::vk::VK_FALSE
-            },
-            maxAnisotropy: desc.max_anisotropy,
-            compareEnable: match desc.compare_func {
-                CompareMode::Never => ffi::vk::VK_TRUE,
-                _ => ffi::vk::VK_FALSE,
-            },
-            compareOp: desc.compare_func.to_comparison_vk(),
-            minLod: 0.0,
-            maxLod: match &desc.mode {
-                MipMapMode::Nearest => 0.0,
-                MipMapMode::Linear => f32::MAX,
-            },
-            borderColor: ffi::vk::VkBorderColor_VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-            unnormalizedCoordinates: ffi::vk::VK_FALSE,
-        };
-        let mut sampler = VulkanSampler {
-            renderer: self.me.clone().upgrade().unwrap(),
-            sampler: ptr::null_mut(),
+            queue_type: desc.queue_type,
+            node_index: desc.node_index,
         };
 
-        let result = ffi::vk::vkCreateSampler(
+        ffi::vk::vkGetDeviceQueue(
             self.device,
-            &mut add_info,
-            ptr::null_mut(),
-            &mut sampler.sampler,
+            result.family_index,
+            result.queue_index,
+            &mut result.queue,
         );
-        if result != ffi::vk::VkResult_VK_SUCCESS {
-            return Err(VulkanError(result));
-        }
-        Ok(sampler)
-    }
-
-    unsafe fn add_root_signature(
-        &self,
-        signature: &RootSignatureDesc<VulkanAPI>,
-    ) -> RendererResult<super::VulkanRootSignature> {
-        todo!()
-    }
-
-    unsafe fn remove_root_signature(&self, signature: &mut super::VulkanRootSignature) {
-        todo!()
-    }
-
-    unsafe fn reset_cmd_pool(&self) {
-        todo!()
-    }
-
-    unsafe fn get_common_info(&self) -> &GPUCommonInfo {
-        return self
-            .active_gpu_common_info
-            .as_ref()
-            .expect("render not initialized")
-            .borrow();
+        assert!(result.queue != ptr::null_mut());
+        Ok(result)
     }
 
     unsafe fn add_swap_chain<'a>(
@@ -1203,14 +1230,16 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 [
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
-                ].as_slice()
+                ]
+                .as_slice()
             } else {
                 [
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_IMMEDIATE_KHR,
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_MAILBOX_KHR,
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_RELAXED_KHR,
                     ffi::vk::VkPresentModeKHR_VK_PRESENT_MODE_FIFO_KHR,
-                ].as_slice()
+                ]
+                .as_slice()
             };
 
             for preferred_mode in preferred_modes {
@@ -1224,23 +1253,47 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
 
             // swap chain
             let mut extent = ffi::vk::VkExtent2D {
-                width: max(min(caps.minImageExtent.width, desc.width), caps.maxImageExtent.width),
-                height: max(min(caps.minImageExtent.height, desc.width), caps.maxImageExtent.height),
+                width: max(
+                    min(caps.minImageExtent.width, desc.width),
+                    caps.maxImageExtent.width,
+                ),
+                height: max(
+                    min(caps.minImageExtent.height, desc.width),
+                    caps.maxImageExtent.height,
+                ),
             };
-            let sharing_mode: ffi::vk::VkSharingMode = ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE;
+            let sharing_mode: ffi::vk::VkSharingMode =
+                ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE;
             let mut present_queue_family_index: Option<u32> = None;
 
             let mut family_property_count: u32 = 0;
-            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(self.active_gpu, &mut family_property_count, ptr::null_mut());
-            let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> = vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
-            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(self.active_gpu, &mut family_property_count, family_properties.as_mut_ptr());
+            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(
+                self.active_gpu,
+                &mut family_property_count,
+                ptr::null_mut(),
+            );
+            let mut family_properties: Vec<ffi::vk::VkQueueFamilyProperties> =
+                vec![MaybeUninit::zeroed().assume_init(); family_property_count as usize];
+            ffi::vk::vkGetPhysicalDeviceQueueFamilyProperties(
+                self.active_gpu,
+                &mut family_property_count,
+                family_properties.as_mut_ptr(),
+            );
 
             // Check if hardware provides dedicated present queue
             if family_property_count > 0 {
                 for (index, property) in family_properties.iter().enumerate() {
                     let mut is_supported: ffi::vk::VkBool32 = 0;
-                    let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(self.active_gpu, index as u32, vk_surface, &mut is_supported);
-                    if result == ffi::vk::VkResult_VK_SUCCESS && ffi::vk::VK_TRUE == is_supported && desc.presentation_queues[0].family_index != index as u32 {
+                    let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(
+                        self.active_gpu,
+                        index as u32,
+                        vk_surface,
+                        &mut is_supported,
+                    );
+                    if result == ffi::vk::VkResult_VK_SUCCESS
+                        && ffi::vk::VK_TRUE == is_supported
+                        && desc.presentation_queues[0].family_index != index as u32
+                    {
                         present_queue_family_index = Some(index as u32);
                         break;
                     }
@@ -1248,8 +1301,15 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 if present_queue_family_index == None {
                     for (index, property) in family_properties.iter().enumerate() {
                         let mut is_supported: ffi::vk::VkBool32 = 0;
-                        let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(self.active_gpu, index as u32, vk_surface, &mut is_supported);
-                        if result == ffi::vk::VkResult_VK_SUCCESS && ffi::vk::VK_TRUE == is_supported {
+                        let result = ffi::vk::vkGetPhysicalDeviceSurfaceSupportKHR(
+                            self.active_gpu,
+                            index as u32,
+                            vk_surface,
+                            &mut is_supported,
+                        );
+                        if result == ffi::vk::VkResult_VK_SUCCESS
+                            && ffi::vk::VK_TRUE == is_supported
+                        {
                             present_queue_family_index = Some(index as u32);
                             break;
                         }
@@ -1262,33 +1322,45 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             let mut queue_family_index_count = 0;
             let mut queue_family_indices = [desc.presentation_queues[0].family_index, 0];
             let mut final_present_queue_family_index = 0;
-            if present_queue_family_index != None && Some(queue_family_indices[0]) != present_queue_family_index {
+            if present_queue_family_index != None
+                && Some(queue_family_indices[0]) != present_queue_family_index
+            {
                 queue_family_index_count = 1;
                 final_present_queue_family_index = present_queue_family_index.unwrap();
                 queue_family_indices[0] = final_present_queue_family_index;
-                ffi::vk::vkGetDeviceQueue(self.device, queue_family_indices[0], 0, &mut present_queue);
+                ffi::vk::vkGetDeviceQueue(
+                    self.device,
+                    queue_family_indices[0],
+                    0,
+                    &mut present_queue,
+                );
             } else {
                 final_present_queue_family_index = queue_family_indices[0];
                 present_queue = ptr::null_mut();
             }
 
             let mut pre_transform: ffi::vk::VkSurfaceTransformFlagBitsKHR = 0;
-            if caps.supportedTransforms & ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR > 0 {
-                pre_transform = ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+            if caps.supportedTransforms
+                & ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                > 0
+            {
+                pre_transform =
+                    ffi::vk::VkSurfaceTransformFlagBitsKHR_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
             } else {
                 pre_transform = caps.currentTransform;
             }
-            let mut composite_alpha: ffi::vk::VkCompositeAlphaFlagBitsKHR = ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR;
+            let mut composite_alpha: ffi::vk::VkCompositeAlphaFlagBitsKHR =
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR;
 
             for flag in [
                 ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
                 ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
                 ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
-                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR
+                ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
             ] {
                 if caps.supportedCompositeAlpha & flag > 0 {
                     composite_alpha = flag;
-                    break
+                    break;
                 }
             }
             assert!(composite_alpha != ffi::vk::VkCompositeAlphaFlagBitsKHR_VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR);
@@ -1304,7 +1376,8 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 imageColorSpace: surface_format.colorSpace,
                 imageExtent: extent,
                 imageArrayLayers: 1,
-                imageUsage: ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                imageUsage: ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                    | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                 imageSharingMode: sharing_mode,
                 queueFamilyIndexCount: queue_family_index_count,
                 pQueueFamilyIndices: queue_family_indices.as_mut_ptr(),
@@ -1312,10 +1385,15 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 compositeAlpha: composite_alpha,
                 presentMode: present_mode,
                 clipped: ffi::vk::VK_TRUE,
-                oldSwapchain: ptr::null_mut()
+                oldSwapchain: ptr::null_mut(),
             };
             {
-                let result = ffi::vk::vkCreateSwapchainKHR(self.device, &mut swap_chain_info, ptr::null_mut(), &mut vk_swap_chain);
+                let result = ffi::vk::vkCreateSwapchainKHR(
+                    self.device,
+                    &mut swap_chain_info,
+                    ptr::null_mut(),
+                    &mut vk_swap_chain,
+                );
                 if result != ffi::vk::VkResult_VK_SUCCESS {
                     return Err(VulkanError(result));
                 }
@@ -1323,9 +1401,88 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
 
             // desc.color_format = ImageFormat::from_vk_format(surface_format.format);
 
-
             Ok(VulkanSwapChain {})
         }
+    }
+    unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<super::VulkanSampler> {
+        assert!(self.device != ptr::null_mut());
+
+        let mut add_info = ffi::vk::VkSamplerCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            pNext: ptr::null_mut(),
+            flags: 0,
+            magFilter: desc.mag_filter.to_vk_filter(),
+            minFilter: desc.min_filter.to_vk_filter(),
+            mipmapMode: desc.mode.to_vk_map_map_mode(),
+            addressModeU: desc.address_u.to_vk_address_mode(),
+            addressModeV: desc.address_v.to_vk_address_mode(),
+            addressModeW: desc.address_w.to_vk_address_mode(),
+            mipLodBias: desc.mip_load_bias,
+            anisotropyEnable: if desc.max_anisotropy > 0.0 {
+                ffi::vk::VK_TRUE
+            } else {
+                ffi::vk::VK_FALSE
+            },
+            maxAnisotropy: desc.max_anisotropy,
+            compareEnable: match desc.compare_func {
+                CompareMode::Never => ffi::vk::VK_TRUE,
+                _ => ffi::vk::VK_FALSE,
+            },
+            compareOp: desc.compare_func.to_comparison_vk(),
+            minLod: 0.0,
+            maxLod: match &desc.mode {
+                MipMapMode::Nearest => 0.0,
+                MipMapMode::Linear => f32::MAX,
+            },
+            borderColor: ffi::vk::VkBorderColor_VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            unnormalizedCoordinates: ffi::vk::VK_FALSE,
+        };
+        let mut sampler = VulkanSampler {
+            renderer: self.me.clone().upgrade().unwrap(),
+            sampler: ptr::null_mut(),
+        };
+
+        let result = ffi::vk::vkCreateSampler(
+            self.device,
+            &mut add_info,
+            ptr::null_mut(),
+            &mut sampler.sampler,
+        );
+        if result != ffi::vk::VkResult_VK_SUCCESS {
+            return Err(VulkanError(result));
+        }
+        Ok(sampler)
+    }
+
+    unsafe fn add_render_target(
+        &self,
+        desc: &RenderTargetDesc,
+    ) -> RendererResult<VulkanRenderTarget> {
+        let is_depth = desc.format.is_depth_only() || desc.format.is_depth_and_stencil_only();
+        assert!(
+            !(is_depth
+                && desc
+                    .descriptors
+                    .contains(DescriptorType::DESCRIPTOR_TYPE_RW_BUFFER)),
+            "Cannot use depth stencil as UAV"
+        );
+
+        let mip_levels = max(desc.mip_levels, 1);
+        let array_size = desc.array_size;
+        let depth_or_array_size = array_size * desc.depth;
+        let mut num_rtvs = desc.mip_levels;
+
+        if desc
+            .descriptors
+            .contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_ARRAY_SLICES)
+            || desc
+                .descriptors
+                .contains(DescriptorType::DESCRIPTOR_TYPE_RENDER_TARGET_DEPTH_SLICES)
+        {
+            num_rtvs *= depth_or_array_size;
+        }
+
+        todo!()
     }
 
     unsafe fn add_texture(&self, desc: &TextureDesc) -> RendererResult<VulkanTexture> {
@@ -1342,13 +1499,28 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             vk_uav_descriptors: vec![],
             vk_srv_stencil_descriptor: ptr::null_mut(),
             vk_image: ptr::null_mut(),
-            own_image: false
+            vma_memory: ptr::null_mut(),
+            vk_device_memory: ptr::null_mut(),
+            width: 0,
+            height: 0,
+            depth: 0,
+            mip_levels: 0,
+            array_size_minus_one: 0,
+            format: UNDEFINED,
+            aspect_mask: 0,
+            node_index: 0,
+            uav: false,
+            own_image: false,
         };
 
-        if desc.native_handle != ptr::null_mut() && !desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_IMPORT_BIT) {
+        if desc.native_handle != ptr::null_mut()
+            && !desc
+                .flags
+                .contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_IMPORT_BIT)
+        {
             texture.own_image = false;
-            texture.vk_image = desc.native_handle as ffi::vk::VkImageView;
-        } else  {
+            texture.vk_image = desc.native_handle as ffi::vk::VkImage;
+        } else {
             texture.own_image = true;
         }
 
@@ -1356,19 +1528,26 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         if desc.start_state.contains(ResourceState::RENDER_TARGET) {
             additional_flag |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         } else if desc.start_state.contains(ResourceState::DEPTH_WRITE) {
-            additional_flag |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+            additional_flag |=
+                ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         }
 
         let array_size: u32 = desc.array_size;
         let mut image_type: ffi::vk::VkImageType = ffi::vk::VkImageType_VK_IMAGE_TYPE_MAX_ENUM;
-        if desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_2D) {
+        if desc
+            .flags
+            .contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_2D)
+        {
             assert_eq!(desc.depth, 1);
             image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_2D;
-        } else if desc.flags.contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_3D) {
+        } else if desc
+            .flags
+            .contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_FORCE_3D)
+        {
             image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_3D;
         } else {
             if desc.depth > 1 {
-                image_type =  ffi::vk::VkImageType_VK_IMAGE_TYPE_3D;
+                image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_3D;
             } else if desc.height > 1 {
                 image_type = ffi::vk::VkImageType_VK_IMAGE_TYPE_2D;
             } else {
@@ -1377,7 +1556,8 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         }
 
         let mut descriptors = desc.descriptors;
-        let mut cubemap_required: bool = descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE_CUBE);
+        let mut cubemap_required: bool =
+            descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE_CUBE);
         let mut array_required: bool = false;
 
         let is_planer: bool = desc.format.is_planer();
@@ -1391,15 +1571,14 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         }
 
         if texture.vk_image == ptr::null_mut() {
-
-
             let mut add_info = ffi::vk::VkImageCreateInfo {
                 sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                 pNext: ptr::null_mut(),
                 flags: {
                     let mut result: ffi::vk::VkImageCreateFlags = 0;
                     if cubemap_required {
-                        result |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+                        result |=
+                            ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
                     }
                     if array_required {
                         result |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT_KHR;
@@ -1411,7 +1590,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 extent: ffi::vk::VkExtent3D {
                     width: desc.width,
                     height: desc.height,
-                    depth: desc.depth
+                    depth: desc.depth,
                 },
                 mipLevels: desc.mip_levels,
                 arrayLayers: array_size,
@@ -1421,28 +1600,44 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
                 queueFamilyIndexCount: 0,
                 pQueueFamilyIndices: ptr::null_mut(),
-                initialLayout: ffi::vk::VkImageLayout_VK_IMAGE_LAYOUT_UNDEFINED
+                initialLayout: ffi::vk::VkImageLayout_VK_IMAGE_LAYOUT_UNDEFINED,
             };
 
             let mut format_props: ffi::vk::VkFormatProperties = MaybeUninit::zeroed().assume_init();
-            ffi::vk::vkGetPhysicalDeviceFormatProperties(self.active_gpu, add_info.format, &mut format_props);
+            ffi::vk::vkGetPhysicalDeviceFormatProperties(
+                self.active_gpu,
+                add_info.format,
+                &mut format_props,
+            );
 
             // multi-planar formats must have each plane separately bound to memory, rather than having a single memory binding for the whole image
             if is_planer {
-                assert!((format_props.optimalTilingFeatures & ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_DISJOINT_BIT) > 0);
+                assert!(
+                    (format_props.optimalTilingFeatures
+                        & ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_DISJOINT_BIT)
+                        > 0
+                );
                 add_info.flags |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_DISJOINT_BIT;
             }
 
-            if (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT) > 0 || (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT) > 0 {
+            if (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_SAMPLED_BIT) > 0
+                || (add_info.usage & ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_STORAGE_BIT) > 0
+            {
                 // Make it easy to copy to and from textures
-                add_info.usage |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                add_info.usage |= ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                    | ffi::vk::VkImageUsageFlagBits_VK_IMAGE_USAGE_TRANSFER_DST_BIT;
             }
 
             // ASSERT(pRenderer->pCapBits->canShaderReadFrom[pDesc->mFormat] && "GPU shader can't' read from this format");
             // Verify that GPU supports this format
-            let format_features: ffi::vk::VkFormatFeatureFlags = util_vk_image_usage_to_format_features(add_info.usage);
-            let flags: ffi::vk::VkFormatFeatureFlags = format_props.optimalTilingFeatures & format_features;
-            assert!((0 != flags), "Format is not supported for GPU local images (i.e. not host visible images)");
+            let format_features: ffi::vk::VkFormatFeatureFlags =
+                util_vk_image_usage_to_format_features(add_info.usage);
+            let flags: ffi::vk::VkFormatFeatureFlags =
+                format_props.optimalTilingFeatures & format_features;
+            assert!(
+                (0 != flags),
+                "Format is not supported for GPU local images (i.e. not host visible images)"
+            );
 
             let mut mem_reqs = ffi::vk::VmaAllocationCreateInfo {
                 flags: 0,
@@ -1452,11 +1647,604 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
                 memoryTypeBits: 0,
                 pool: ptr::null_mut(),
                 pUserData: ptr::null_mut(),
-                priority: 0.0
+                priority: 0.0,
             };
 
+            let mut external_info = ffi::vk::VkExternalMemoryImageCreateInfoKHR {
+                sType:
+                    ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+                pNext: ptr::null_mut(),
+                handleTypes: 0,
+            };
+
+            let mut export_memory_info = ffi::vk::VkExportMemoryAllocateInfoKHR {
+                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
+                pNext: ptr::null_mut(),
+                handleTypes: 0,
+            };
+            if self
+                .features
+                .contains(VulkanSupportedFeatures::EXTERNAL_MEMORY_EXTENSION)
+                && desc
+                    .flags
+                    .contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_IMPORT_BIT)
+            {
+                add_info.pNext = ((&external_info)
+                    as *const ffi::vk::VkExternalMemoryImageCreateInfoKHR)
+                    as *const c_void;
+            } else if self
+                .features
+                .contains(VulkanSupportedFeatures::EXTERNAL_MEMORY_EXTENSION)
+                && desc
+                    .flags
+                    .contains(TextureCreationFlags::TEXTURE_CREATION_FLAG_EXPORT_BIT)
+            {
+                mem_reqs.pUserData = ((&export_memory_info)
+                    as *const ffi::vk::VkExportMemoryAllocateInfoKHR)
+                    as *mut c_void;
+                mem_reqs.flags |=
+                    ffi::vk::VmaAllocationCreateFlagBits_VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+            }
+
+            let mut alloc_info = ffi::vk::VmaAllocationInfo {
+                memoryType: 0,
+                deviceMemory: ptr::null_mut(),
+                offset: 0,
+                size: 0,
+                pMappedData: ptr::null_mut(),
+                pUserData: ptr::null_mut(),
+            };
+            if is_single_plane {
+                let result = ffi::vk::vmaCreateImage(
+                    self.vma_allocator,
+                    &mut add_info,
+                    &mut mem_reqs,
+                    &mut texture.vk_image,
+                    ptr::null_mut(),
+                    &mut alloc_info,
+                );
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            } else {
+                // Create info requires the mutable format flag set for multi planar images
+                // Also pass the format list for mutable formats as per recommendation from the spec
+                // Might help to keep DCC enabled if we ever use this as a output format
+                // DCC gets disabled when we pass mutable format bit to the create info. Passing the format list helps the driver to enable it
+
+                let mut planer_format = desc.format.to_vk_format();
+                let format_list = ffi::vk::VkImageFormatListCreateInfoKHR {
+                    sType:
+                        ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR,
+                    pNext: ptr::null_mut(),
+                    viewFormatCount: 1,
+                    pViewFormats: &mut planer_format,
+                };
+
+                add_info.flags |= ffi::vk::VkImageCreateFlagBits_VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+                add_info.pNext = ((&format_list) as *const ffi::vk::VkImageFormatListCreateInfoKHR)
+                    as *mut c_void;
+
+                {
+                    let result = ffi::vk::vkCreateImage(
+                        self.device,
+                        &mut add_info,
+                        ptr::null_mut(),
+                        &mut texture.vk_image,
+                    );
+                    if result != ffi::vk::VkResult_VK_SUCCESS {
+                        return Err(VulkanError(result));
+                    }
+                }
+                let memory_requirement = util_get_planar_vk_image_memory_requirement(
+                    self.device,
+                    texture.vk_image,
+                    num_planes,
+                );
+
+                let mut mem_props: ffi::vk::VkPhysicalDeviceMemoryProperties =
+                    MaybeUninit::zeroed().assume_init();
+                ffi::vk::vkGetPhysicalDeviceMemoryProperties(self.active_gpu, &mut mem_props);
+
+                let mut mem_alloc_info = ffi::vk::VkMemoryAllocateInfo {
+                    sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                    pNext: ptr::null_mut(),
+                    allocationSize: memory_requirement.requirement.size,
+                    memoryTypeIndex: match util_get_memory_type(
+                        mem_reqs.memoryTypeBits,
+                        &mem_props,
+                        ffi::vk::VkMemoryPropertyFlagBits_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    ) {
+                        Some(i) => i,
+                        None => {
+                            error!("could not find a matching memory type");
+                            assert!(false);
+                            0
+                        }
+                    },
+                };
+
+                {
+                    let result = ffi::vk::vkAllocateMemory(
+                        self.device,
+                        &mut mem_alloc_info,
+                        ptr::null_mut(),
+                        &mut texture.vk_device_memory,
+                    );
+                    if result != ffi::vk::VkResult_VK_SUCCESS {
+                        return Err(VulkanError(result));
+                    }
+                }
+                let mut bind_images_memory_info: Vec<ffi::vk::VkBindImageMemoryInfo> =
+                    vec![MaybeUninit::zeroed().assume_init(); num_planes as usize];
+                let mut bind_image_planes_memory_info: Vec<ffi::vk::VkBindImagePlaneMemoryInfo> =
+                    vec![MaybeUninit::zeroed().assume_init(); num_planes as usize];
+                for i in 0..num_planes {
+                    let mut bind_image_plane_memory_info =
+                        bind_image_planes_memory_info.get_unchecked_mut(i as usize);
+
+                    bind_image_plane_memory_info.sType =
+                        ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO;
+                    bind_image_plane_memory_info.pNext = ptr::null_mut();
+                    bind_image_plane_memory_info.planeAspect =
+                        ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_PLANE_0_BIT << 1;
+
+                    let mut bind_image_memory =
+                        bind_images_memory_info.get_unchecked_mut(i as usize);
+                    bind_image_memory.sType =
+                        ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
+                    bind_image_memory.pNext = (bind_image_plane_memory_info
+                        as *const ffi::vk::VkBindImagePlaneMemoryInfo)
+                        as *mut c_void;
+                    bind_image_memory.image = texture.vk_image;
+                    bind_image_memory.memory = texture.vk_device_memory;
+                    bind_image_memory.memoryOffset =
+                        *memory_requirement.planar_offset.get_unchecked(i as usize);
+                }
+                {
+                    let result = ffi::vk::vkBindImageMemory2(
+                        self.device,
+                        num_planes,
+                        bind_images_memory_info.as_mut_ptr(),
+                    );
+                    if result != ffi::vk::VkResult_VK_SUCCESS {
+                        return Err(VulkanError(result));
+                    }
+                }
+            }
+        }
+
+        let view_type: ffi::vk::VkImageViewType = match image_type {
+            ffi::vk::VkImageType_VK_IMAGE_TYPE_1D => {
+                if array_size > 1 {
+                    ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_1D_ARRAY
+                } else {
+                    ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_1D
+                }
+            }
+            ffi::vk::VkImageType_VK_IMAGE_TYPE_2D => {
+                if cubemap_required {
+                    if array_size > 6 {
+                        ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_CUBE_ARRAY
+                    } else {
+                        ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_CUBE
+                    }
+                } else {
+                    if array_size > 1 {
+                        ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                    } else {
+                        ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_2D
+                    }
+                }
+            }
+            ffi::vk::VkImageType_VK_IMAGE_TYPE_3D => {
+                if array_size > 1 {
+                    error!("Cannot support 3D Texture Array in Vulkan");
+                    assert!(false);
+                }
+                ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_3D
+            }
+            _ => {
+                panic!("Image Format not supported")
+            }
+        };
+
+        let mut srv_desc = ffi::vk::VkImageViewCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            pNext: ptr::null_mut(),
+            flags: 0,
+            image: texture.vk_image,
+            viewType: view_type,
+            format: desc.format.to_vk_format(),
+            components: ffi::vk::VkComponentMapping {
+                r: ffi::vk::VkComponentSwizzle_VK_COMPONENT_SWIZZLE_R,
+                g: ffi::vk::VkComponentSwizzle_VK_COMPONENT_SWIZZLE_G,
+                b: ffi::vk::VkComponentSwizzle_VK_COMPONENT_SWIZZLE_B,
+                a: ffi::vk::VkComponentSwizzle_VK_COMPONENT_SWIZZLE_A,
+            },
+            subresourceRange: ffi::vk::VkImageSubresourceRange {
+                aspectMask: desc.format.to_vk_aspect_mask(true),
+                baseMipLevel: 0,
+                levelCount: desc.mip_levels,
+                baseArrayLayer: 0,
+                layerCount: array_size,
+            },
+        };
+
+        if descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE) {
+            let result = ffi::vk::vkCreateImageView(
+                self.device,
+                &mut srv_desc,
+                ptr::null_mut(),
+                &mut texture.vk_srv_descriptor,
+            );
+            if result != ffi::vk::VkResult_VK_SUCCESS {
+                return Err(VulkanError(result));
+            }
+        }
+        if desc.format.is_stencil() && descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_TEXTURE)
+        {
+            srv_desc.subresourceRange.aspectMask =
+                ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_STENCIL_BIT;
+            let result = ffi::vk::vkCreateImageView(
+                self.device,
+                &mut srv_desc,
+                ptr::null_mut(),
+                &mut texture.vk_srv_stencil_descriptor,
+            );
+            if result != ffi::vk::VkResult_VK_SUCCESS {
+                return Err(VulkanError(result));
+            }
+        }
+
+        if descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RW_TEXTURE) {
+            let mut uav_desc: ffi::vk::VkImageViewCreateInfo = srv_desc.clone();
+            // #NOTE : We dont support imageCube, imageCubeArray for consistency with other APIs
+            // All cubemaps will be used as image2DArray for Image Load / Store ops
+            if uav_desc.viewType == ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_CUBE_ARRAY
+                || uav_desc.viewType == ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_CUBE
+            {
+                uav_desc.viewType = ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            }
+            texture.vk_uav_descriptors =
+                vec![MaybeUninit::zeroed().assume_init(); desc.mip_levels as usize];
+            for i in 0..desc.mip_levels {
+                uav_desc.subresourceRange.baseMipLevel = i;
+                let result = ffi::vk::vkCreateImageView(
+                    self.device,
+                    &mut uav_desc,
+                    ptr::null_mut(),
+                    &mut texture.vk_uav_descriptors[i as usize],
+                );
+                if result != ffi::vk::VkResult_VK_SUCCESS {
+                    return Err(VulkanError(result));
+                }
+            }
+        }
+
+        texture.node_index = desc.node_index;
+        texture.width = desc.width;
+        texture.height = desc.height;
+        texture.depth = desc.depth;
+        texture.mip_levels = desc.mip_levels;
+        texture.uav = desc
+            .descriptors
+            .contains(DescriptorType::DESCRIPTOR_TYPE_RW_TEXTURE);
+        texture.array_size_minus_one = array_size - 1;
+        texture.format = desc.format;
+
+        Ok(texture)
+    }
+
+    unsafe fn add_root_signature(
+        &self,
+        desc: &RootSignatureDesc<VulkanAPI>,
+    ) -> RendererResult<super::VulkanRootSignature> {
+        let mut root_signature = VulkanRootSignature {
+
+        };
+
+        for shader in &desc.shader {
 
         }
+
+        // let mut add_info = ffi::vk::VkPipelineLayoutCreateInfo {
+        //
+        // };
+
+        todo!()
+
+    }
+
+    unsafe fn add_shader_binary(&self, desc: &BinaryShaderDesc) -> RendererResult<VulkanShader> {
+        assert!(self.device != ptr::null_mut());
+
+        let mut shader = VulkanShader {
+            render: self.me.clone().upgrade().unwrap(),
+            stages: desc.stages,
+            shader_module: vec![]
+        };
+        // let mut init_shader = |desc: &BinaryShaderStageDesc| {
+        //     let mut create_info = ffi::vk::VkShaderModuleCreateInfo {
+        //         sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        //         pNext: ptr::null_mut(),
+        //         flags: 0,
+        //         codeSize: desc.byte_code_size as usize,
+        //         pCode: desc.byte_code
+        //     };
+        //     // let mut module: ffi::vk::VkShaderModule = ptr::null_mut();
+        //     // let mut ast = spirv::Ast::<glsl::Target>::parse(&module)?;
+        //     // let resources = ast.get_shader_resources();
+        //
+        //     check_vk_result!(ffi::vk::vkCreateShaderModule(self.device, &mut create_info, ptr::null_mut(), &mut module));
+        //     module
+        // };
+        // for shader_desc in &desc.shaders {
+        //     let mut module = spirv::Module::from_words(std::slice::from_raw_parts(shader_desc.byte_code, shader_desc.byte_code_size as usize));
+        //     let mut ast = spirv::Ast::<glsl::Target>::parse(&module)?;
+        //     let resource = ast.get_shader_resources()?;
+        //     // resource.separate_samplers[0].id
+        //
+        // }
+
+        for stage in [
+            ShaderStage::Vertex,
+            ShaderStage::TesselationControl,
+            ShaderStage::TesselationEvaluation,
+            ShaderStage::Geometry,
+            ShaderStage::Fragment,
+            ShaderStage::Compute,
+            ShaderStage::Raytracing,
+        ] {
+            let stage_bit = ShaderStageFlags::from_bits(1 << (stage as u32)).unwrap();
+            if desc.stages.contains(stage_bit) {
+
+
+
+                // let mut desc_stage = match stage {
+                //     ShaderStage::Vertex => &desc.vert,
+                //     ShaderStage::TesselationControl => &desc.hull,
+                //     ShaderStage::TesselationEvaluation => &desc.domain,
+                //     ShaderStage::Geometry => &desc.geom,
+                //     ShaderStage::Fragment => &desc.frag,
+                //     ShaderStage::Raytracing | ShaderStage::Compute => &desc.comp,
+                //     _ => panic!("logic error"),
+                // };
+                // match desc_stage {
+                //     None => {}
+                //     Some(c) => {
+                //
+                //         let mut module = spirv::Module::from_words(std::slice::from_raw_parts(c.byte_code, c.byte_code_size as usize));
+                //         let mut ast = spirv::Ast::<glsl::Target>::parse(&module)?;
+                //
+                //         shader.shader_module[stage as usize] = Some((c.entry_point_name.clone(), init_shader(&c)));
+                //     }
+                // }
+            }
+        }
+        Ok(shader)
+    }
+
+    unsafe fn drop_swap_chain(&self) {
         todo!()
     }
+
+    unsafe fn remove_render_target(&self, _target: &mut VulkanRenderTarget) {
+        todo!()
+    }
+
+    unsafe fn remove_root_signature(&self, signature: &mut super::VulkanRootSignature) {
+        todo!()
+    }
+
+    unsafe fn get_common_info(&self) -> &GPUCommonInfo {
+        return self
+            .active_gpu_common_info
+            .as_ref()
+            .expect("render not initialized")
+            .borrow();
+    }
+
+    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<super::VulkanBuffer> {
+        assert!(desc.size > 0);
+        assert!(self.device != ptr::null_mut());
+        assert!(!self.active_gpu_common_info.is_none());
+
+        let mut buffer: VulkanBuffer = VulkanBuffer {
+            renderer: self.me.clone().upgrade().unwrap(),
+            vk_buffer: ptr::null_mut(),
+            vk_storage_texel_view: ptr::null_mut(),
+            vk_uniform_texel_view: ptr::null_mut(),
+            vma_allocation: ptr::null_mut(),
+            mapping_address: ptr::null_mut(),
+            offset: 0,
+            size: 0,
+            descriptors: DescriptorType::DESCRIPTOR_TYPE_UNDEFINED,
+            memory_usage: ResourceMemoryUsage::Unknown,
+            node_index: 0,
+        };
+
+        let common_info = self.active_gpu_common_info.as_ref().unwrap();
+
+        let mut allocated_size = desc.size;
+
+        if desc
+            .descriptors
+            .contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+        {
+            let min_alignment = common_info.uniform_buffer_alignment;
+            allocated_size = forge_math::round_up(allocated_size, min_alignment as u64);
+        }
+        let mut add_info = ffi::vk::VkBufferCreateInfo {
+            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            pNext: ptr::null_mut(),
+            flags: 0,
+            size: allocated_size,
+            usage: desc
+                .descriptors
+                .to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED),
+            sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
+            queueFamilyIndexCount: 0,
+            pQueueFamilyIndices: ptr::null_mut(),
+        };
+
+        if desc.memory_usage == ResourceMemoryUsage::GpuOnly
+            || desc.memory_usage == ResourceMemoryUsage::Unknown
+        {
+            add_info.usage |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        }
+
+        let mut vma_mem_reqs = ffi::vk::VmaAllocationCreateInfo {
+            flags: {
+                let mut result = 0;
+                if desc
+                    .flags
+                    .contains(BufferCreationFlag::BUFFER_CREATION_FLAG_OWN_MEMORY_BIT)
+                {
+                    result |= ffi::vk::VmaAllocationCreateFlagBits_VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+                }
+                if desc
+                    .flags
+                    .contains(BufferCreationFlag::BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT)
+                {
+                    result |= ffi::vk::VmaAllocationCreateFlagBits_VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                }
+                result
+            },
+            usage: desc.memory_usage.to_vma_usage(),
+            requiredFlags: {
+                let mut result = 0;
+                if desc
+                    .flags
+                    .contains(BufferCreationFlag::BUFFER_CREATION_FLAG_HOST_VISIBLE)
+                {
+                    result |= ffi::vk::VkMemoryPropertyFlagBits_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+                }
+                if desc
+                    .flags
+                    .contains(BufferCreationFlag::BUFFER_CREATION_FLAG_HOST_COHERENT)
+                {
+                    result |=
+                        ffi::vk::VkMemoryPropertyFlagBits_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                }
+                result
+            },
+            preferredFlags: 0,
+            memoryTypeBits: 0,
+            pool: ptr::null_mut(),
+            pUserData: ptr::null_mut(),
+            priority: 0.0,
+        };
+
+        let mut alloc_info: ffi::vk::VmaAllocationInfo = MaybeUninit::zeroed().assume_init();
+        {
+            let result = ffi::vk::vmaCreateBuffer(
+                self.vma_allocator,
+                &mut add_info,
+                &mut vma_mem_reqs,
+                &mut buffer.vk_buffer,
+                &mut buffer.vma_allocation,
+                &mut alloc_info,
+            );
+            if result != ffi::vk::VkResult_VK_SUCCESS {
+                return Err(VulkanError(result));
+            }
+        }
+
+        buffer.mapping_address = alloc_info.pMappedData;
+
+        if desc
+            .descriptors
+            .contains(DescriptorType::DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+            || desc
+                .descriptors
+                .contains(DescriptorType::DESCRIPTOR_TYPE_BUFFER)
+            || desc
+                .descriptors
+                .contains(DescriptorType::DESCRIPTOR_TYPE_RW_BUFFER)
+        {
+            buffer.offset = desc.structure_stride * desc.first_element;
+        }
+
+        if add_info.usage & ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT
+            > 0
+        {
+            let mut view_info = ffi::vk::VkBufferViewCreateInfo {
+                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+                pNext: ptr::null_mut(),
+                flags: 0,
+                buffer: ptr::null_mut(),
+                format: desc.format.to_vk_format(),
+                offset: desc.first_element * desc.structure_stride,
+                range: desc.element_count * desc.structure_stride,
+            };
+            let mut format_properties: ffi::vk::VkFormatProperties =
+                MaybeUninit::zeroed().assume_init();
+            ffi::vk::vkGetPhysicalDeviceFormatProperties(
+                self.active_gpu,
+                view_info.format,
+                &mut format_properties,
+            );
+            if !(format_properties.bufferFeatures
+                & ffi::vk::VkFormatFeatureFlagBits_VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT
+                > 0)
+            {
+                warn!(
+                    "Failed to create uniform texel buffer view for format {}",
+                    desc.format as u32
+                );
+            } else {
+                check_vk_result!(ffi::vk::vkCreateBufferView(
+                    self.device,
+                    &mut view_info,
+                    ptr::null_mut(),
+                    &mut buffer.vk_uniform_texel_view
+                ));
+            }
+        }
+
+        if add_info.usage & ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT
+            > 0
+        {
+            let mut view_info = ffi::vk::VkBufferViewCreateInfo {
+                sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+                pNext: ptr::null_mut(),
+                flags: 0,
+                buffer: ptr::null_mut(),
+                format: desc.format.to_vk_format(),
+                offset: desc.first_element * desc.structure_stride,
+                range: desc.element_count * desc.structure_stride,
+            };
+            let mut format_properties: ffi::vk::VkFormatProperties =
+                MaybeUninit::zeroed().assume_init();
+            ffi::vk::vkGetPhysicalDeviceFormatProperties(
+                self.active_gpu,
+                view_info.format,
+                &mut format_properties,
+            );
+            if !(format_properties.bufferFeatures
+                & ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT
+                > 0)
+            {
+                warn!(
+                    "Failed to create uniform texel buffer view for format {}",
+                    desc.format as u32
+                );
+            } else {
+                check_vk_result!(ffi::vk::vkCreateBufferView(
+                    self.device,
+                    &mut view_info,
+                    ptr::null_mut(),
+                    &mut buffer.vk_storage_texel_view
+                ));
+            }
+        }
+
+        buffer.size = desc.size;
+        buffer.memory_usage = desc.memory_usage;
+        buffer.node_index = desc.node_index;
+        buffer.descriptors = desc.descriptors;
+        Ok(buffer)
+    }
+
 }

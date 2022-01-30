@@ -5,7 +5,7 @@
 use crate::{
     desc::{
         BufferDesc, CmdDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,
-        RootSignatureDesc, SamplerDesc, SwapChainDesc,
+        RenderTargetDesc, RootSignatureDesc, SamplerDesc, SwapChainDesc, TextureDesc,
     },
     error::RendererResult,
     types::{FenceStatus, GPUPresetLevel, GPUSupportedFeatures, ShadingRates},
@@ -15,12 +15,13 @@ use std::{
     ffi::{CStr, CString},
     sync::Arc,
 };
-use crate::desc::{RenderTargetDesc, TextureDesc};
+use crate::desc::BinaryShaderDesc;
 
 mod desc;
 mod error;
 mod types;
 mod vulkan;
+mod shader_reflection;
 
 pub mod ffi {
     pub use vulkan_sys as vk;
@@ -68,7 +69,7 @@ pub trait Api: Clone + Sized {
     type Sampler: Sampler;
     type Command<'a>: Command<Self>;
     type CommandPool<'a>: CommandPool;
-    type Buffer: Buffer;
+    type Buffer: Buffer<Self>;
     type SwapChain: SwapChain;
 
     const CURRENT_API: APIType;
@@ -86,7 +87,11 @@ pub trait SwapChain: Sized {}
 
 pub trait RootSignature: Sized {}
 
-pub trait Buffer: Sized {}
+pub trait Buffer<A: Api>: Sized {
+    unsafe fn map_buffer(&mut self, offset: u32, size: u32);
+    unsafe fn write<T>(&mut self, offset: u32, payload: &T);
+    unsafe fn unmap_buffer(&mut self);
+}
 
 pub trait Renderer<A: Api>: Sized {
     unsafe fn init(name: &CStr, desc: &RenderDesc) -> RendererResult<Arc<A::Renderer>>;
@@ -116,18 +121,18 @@ pub trait Renderer<A: Api>: Sized {
         signature: &RootSignatureDesc<A>,
     ) -> RendererResult<A::RootSignature>;
 
+    unsafe fn add_shader_binary(&self, desc: &BinaryShaderDesc) -> RendererResult<A::Shader>;
+
     unsafe fn drop_swap_chain(&self);
     unsafe fn remove_render_target(&self, target: &mut A::RenderTarget);
 
     unsafe fn remove_root_signature(&self, signature: &mut A::RootSignature);
 
     // command buffer functions
-    unsafe fn reset_cmd_pool(&self);
     unsafe fn get_common_info(&self) -> &GPUCommonInfo;
 
     // resource functions
     unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
-    unsafe fn drop_buffer(&self, buffer: &mut A::Buffer);
 }
 
 pub trait Command<A: Api>: Sized {
@@ -165,19 +170,14 @@ pub trait Command<A: Api>: Sized {
     );
     unsafe fn cmd_dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
 
-    unsafe fn cmd_update_buffer(
-        &mut self,
-        buffer: &A::Buffer,
-        dst_offset: u64,
-        src_buffer: &A::Buffer,
-        size: u64,
-    );
-
     // transition commands
     unsafe fn cmd_resource_barrier(&self);
 
     // virtual textures
     unsafe fn cmd_update_virtual_texture(&self);
+
+    unsafe fn update_buffer(&mut self, src_buffer: &A::Buffer, src_offset: u64, dest_buffer: &A::Buffer, dst_offset: u64, size: u64);
+
 }
 
 pub trait RenderContext {

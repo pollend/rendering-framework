@@ -28,6 +28,8 @@ use std::{
     thread::sleep,
     u32,
 };
+use ash::{Entry, Instance};
+use ash::vk::{BufferUsageFlags, SharingMode};
 use winit::event::VirtualKeyCode::N;
 use crate::desc::BinaryShaderStageDesc;
 use crate::types::{ShaderStage, ShaderStageFlags};
@@ -35,16 +37,17 @@ use crate::vulkan::buffer::VulkanBuffer;
 use crate::vulkan::{VulkanRootSignature, VulkanShader};
 
 use spirv_cross::{spirv, glsl};
-use spirv_cross::spirv::ShaderResources;
+use spirv_cross::spirv::{Ast, ShaderResources};
 
 struct MemoryRequirementResults {
     requirement: ffi::vk::VkMemoryRequirements,
     planar_offset: Vec<u64>,
 }
 
+
 fn util_get_planar_vk_image_memory_requirement(
-    device: ffi::vk::VkDevice,
-    image: ffi::vk::VkImage,
+    device: ash::vk::Device,
+    image: ash::vk::Image,
     num_planes: u32,
 ) -> MemoryRequirementResults {
     let mut results = MemoryRequirementResults {
@@ -56,40 +59,58 @@ fn util_get_planar_vk_image_memory_requirement(
         planar_offset: vec![],
     };
 
-    let mut image_plane_mem_req_info2 = ffi::vk::VkImageMemoryRequirementsInfo2 {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2_KHR,
-        pNext: ptr::null_mut(),
-        image,
-    };
-    let mut image_plane_mem_req_info = ffi::vk::VkImagePlaneMemoryRequirementsInfo {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
-        pNext: (&image_plane_mem_req_info2 as *const ffi::vk::VkImageMemoryRequirementsInfo2)
-            as *mut c_void,
-        planeAspect: 0,
-    };
+    let mut mem_req_2 = ash::vk::MemoryRequirements2::builder();
 
-    let mut mem_dedicated_req = ffi::vk::VkMemoryDedicatedRequirements {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
-        pNext: ptr::null_mut(),
-        prefersDedicatedAllocation: 0,
-        requiresDedicatedAllocation: 0,
-    };
+    let mut mem_dedicated_req = ash::vk::MemoryDedicatedRequirements::builder()
+        .build();
 
-    let mut mem_req_2 = ffi::vk::VkMemoryRequirements2 {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-        pNext: (&mem_dedicated_req as *const ffi::vk::VkMemoryDedicatedRequirements) as *mut c_void,
-        memoryRequirements: ffi::vk::VkMemoryRequirements {
-            size: 0,
-            alignment: 0,
-            memoryTypeBits: 0,
-        },
-    };
+    let mut image_plane_mem_req_info = ash::vk::ImagePlaneMemoryRequirementsInfo::builder()
+        .build();
+
+    let mut image_plane_mem_req_info2 = ash::vk::ImageMemoryRequirementsInfo2::builder()
+        .image(image)
+        .push_next(&mut image_plane_mem_req_info)
+        .push_next(&mut mem_dedicated_req)
+        .push_next(&mut mem_req_2)
+        .build();
+
+    // let mut image_plane_mem_req_info2 = ffi::vk::VkImageMemoryRequirementsInfo2 {
+    //     sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2_KHR,
+    //     pNext: ptr::null_mut(),
+    //     image,
+    // };
+    // let mut image_plane_mem_req_info = ffi::vk::VkImagePlaneMemoryRequirementsInfo {
+    //     sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
+    //     pNext: (&image_plane_mem_req_info2 as *const ffi::vk::VkImageMemoryRequirementsInfo2)
+    //         as *mut c_void,
+    //     planeAspect: 0,
+    // };
+    //
+    // let mut mem_dedicated_req = ffi::vk::VkMemoryDedicatedRequirements {
+    //     sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+    //     pNext: ptr::null_mut(),
+    //     prefersDedicatedAllocation: 0,
+    //     requiresDedicatedAllocation: 0,
+    // };
+    //
+    // let mut mem_req_2 = ffi::vk::VkMemoryRequirements2 {
+    //     sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+    //     pNext: (&mem_dedicated_req as *const ffi::vk::VkMemoryDedicatedRequirements) as *mut c_void,
+    //     memoryRequirements: ffi::vk::VkMemoryRequirements {
+    //         size: 0,
+    //         alignment: 0,
+    //         memoryTypeBits: 0,
+    //     },
+    // };
 
     unsafe {
         for i in 0..num_planes {
-            image_plane_mem_req_info.planeAspect =
-                (ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_PLANE_0_BIT << 1)
-                    as ffi::vk::VkImageAspectFlagBits;
+            image_plane_mem_req_info.plane_aspect = ash::vk::ImageAspectFlags::PLANE_0 << i;;
+
+            //
+            // image_plane_mem_req_info.planeAspect =
+            //     (ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_PLANE_0_BIT << i)
+            //         as ffi::vk::VkImageAspectFlagBits;
             ffi::vk::vkGetImageMemoryRequirements2(
                 device,
                 &mut image_plane_mem_req_info2,
@@ -255,56 +276,39 @@ unsafe fn util_find_queue_family_index(
     }
 }
 
-unsafe fn init_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> RendererResult<()> {
+unsafe fn create_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> RendererResult<()> {
     // layers: Vec<const *c_char> = Vec::new();
     let application_name = CString::new("3DEngine").expect("CString::new failed");
     let engine_name = CString::new("3DEngine").expect("CString::new failed");
 
     let _loaded_extension: Vec<CString> = vec![];
 
-    let mut layer_count: u32 = 0;
-    let mut ext_count: u32 = 0;
-    ffi::vk::vkEnumerateInstanceLayerProperties(&mut layer_count, ptr::null_mut());
-    ffi::vk::vkEnumerateInstanceExtensionProperties(
-        ptr::null_mut(),
-        &mut ext_count,
-        ptr::null_mut(),
-    );
 
-    let mut layer_properties: Vec<ffi::vk::VkLayerProperties> =
-        vec![MaybeUninit::zeroed().assume_init(); layer_count as usize];
-    let mut ext_properties: Vec<ffi::vk::VkExtensionProperties> =
-        vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
-    ffi::vk::vkEnumerateInstanceLayerProperties(&mut layer_count, layer_properties.as_mut_ptr());
-    ffi::vk::vkEnumerateInstanceExtensionProperties(
-        ptr::null_mut(),
-        &mut ext_count,
-        ext_properties.as_mut_ptr(),
-    );
+    let layer_properties = renderer.entry.enumerate_instance_layer_properties().unwrap();
+    let ext_properties = renderer.entry.enumerate_instance_extension_properties().unwrap();
+
 
     for layer_property in &layer_properties {
         info!(
             "vkinstance-layer: {}",
-            CStr::from_ptr(layer_property.layerName.as_ptr()).to_string_lossy()
+            CStr::from_ptr(layer_property.layer_name.as_ptr()).to_string_lossy()
         );
     }
 
     for ext_property in &ext_properties {
         info!(
             "vkinstance-ext: {}",
-            CStr::from_ptr(ext_property.extensionName.as_ptr()).to_string_lossy()
+            CStr::from_ptr(ext_property.extension_name.as_ptr()).to_string_lossy()
         );
     }
 
-    let create_info = ffi::vk::VkApplicationInfo {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        pNext: ptr::null_mut(),
-        pApplicationName: application_name.as_ptr(),
-        engineVersion: ffi::vk::vkMakeVersion(1, 0, 0),
-        applicationVersion: ffi::vk::vkMakeVersion(1, 0, 0),
-        pEngineName: engine_name.as_ptr(),
-        apiVersion: ffi::vk::vkMakeVersion(1, 0, 0),
-    };
+    let app_create_info = ash::vk::ApplicationInfo::builder()
+        .application_name(&application_name.as_c_str())
+        .engine_version(0)
+        .application_version(0)
+        .engine_name(&engine_name.as_c_str())
+        .api_version(0)
+        .build();
 
     let mut wanted_instance_extensions: HashSet<CString> = HashSet::new();
     let mut wanted_instance_layers: HashSet<CString> = HashSet::new();
@@ -339,30 +343,29 @@ unsafe fn init_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Ren
     // Layer extensions
     for target_layer in &wanted_instance_layers {
         let mut layer_target_ext_count: u32 = 0;
-        ffi::vk::vkEnumerateInstanceExtensionProperties(
-            target_layer.as_ptr(),
-            &mut layer_target_ext_count,
-            ptr::null_mut(),
+        renderer.entry.fp_v1_0().enumerate_instance_extension_properties(target_layer.as_ptr(),
+                                                                         &mut layer_target_ext_count,
+                                                                         ptr::null_mut()
         );
 
-        let mut layer_target_ext: Vec<ffi::vk::VkExtensionProperties> =
-            vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
-        ffi::vk::vkEnumerateInstanceExtensionProperties(
-            target_layer.as_ptr(),
-            &mut layer_target_ext_count,
-            layer_target_ext.as_mut_ptr(),
+        let mut layer_target_ext: Vec<ash::vk::ExtensionProperties> =
+            vec![ash::vk::ExtensionProperties::default(); ext_count as usize];
+        renderer.entry.fp_v1_0().enumerate_instance_extension_properties(target_layer.as_ptr(),
+                                                                         &mut layer_target_ext_count,
+                                                                         layer_target_ext.as_mut_ptr()
         );
 
         wanted_instance_extensions.retain(move |layer| {
             for ext_property in &layer_target_ext {
-                let extension_name = CStr::from_ptr(ext_property.extensionName.as_ptr());
-                if extension_name.eq(layer) {
-                    return true;
+                if ext_property.extension_name.eq(layer) {
+                    return true
                 }
+
             }
             return false;
         });
     }
+
 
     // Standalone extensions
     wanted_instance_extensions.retain(move |layer| {
@@ -387,27 +390,22 @@ unsafe fn init_instance(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Ren
     }
 
     // enabled_layers.push()
-    let create_info = ffi::vk::VkInstanceCreateInfo {
-        sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        pNext: ptr::null(),
-        flags: 0,
-        pApplicationInfo: &create_info,
-        enabledLayerCount: enabled_layers.len() as u32,
-        ppEnabledLayerNames: enabled_layers.as_ptr(),
-        enabledExtensionCount: enabled_extensions.len() as u32,
-        ppEnabledExtensionNames: enabled_extensions.as_ptr(),
-    };
+    let mut instance_info = ash::vk::InstanceCreateInfo::builder()
+        .application_info(&app_create_info)
+        .enabled_layer_names(&enabled_layers.as_slice())
+        .enabled_extension_names(&enabled_extensions.as_slice())
+        .build();
 
-    check_vk_result!(ffi::vk::vkCreateInstance(
-        &create_info,
-        ptr::null(),
-        &mut renderer.instance
-    ));
+
+
+    renderer.instance =
+        Some(renderer.entry.create_instance(&instance_info, None).unwrap());
 
     Ok(())
 }
 
 unsafe fn init_device(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> RendererResult<()> {
+
     assert!(renderer.instance != ptr::null_mut());
 
     let devices = VulkanGPUInfo::all(renderer.instance);
@@ -434,46 +432,49 @@ unsafe fn init_device(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Rende
     };
     renderer.active_gpu = gpu.get_device();
 
-    let mut layer_count: u32 = 0;
-    let mut ext_count: u32 = 0;
-    ffi::vk::vkEnumerateDeviceLayerProperties(
-        renderer.active_gpu,
-        &mut layer_count,
-        ptr::null_mut(),
-    );
-    ffi::vk::vkEnumerateDeviceExtensionProperties(
-        renderer.active_gpu,
-        ptr::null_mut(),
-        &mut ext_count,
-        ptr::null_mut(),
-    );
+    // let mut layer_count: u32 = 0;
+    // let mut ext_count: u32 = 0;
+    // ffi::vk::vkEnumerateDeviceLayerProperties(
+    //     renderer.active_gpu,
+    //     &mut layer_count,
+    //     ptr::null_mut(),
+    // );
+    // ffi::vk::vkEnumerateDeviceExtensionProperties(
+    //     renderer.active_gpu,
+    //     ptr::null_mut(),
+    //     &mut ext_count,
+    //     ptr::null_mut(),
+    // );
 
-    let mut layers: Vec<ffi::vk::VkLayerProperties> =
-        vec![MaybeUninit::zeroed().assume_init(); layer_count as usize];
-    ffi::vk::vkEnumerateDeviceLayerProperties(
-        renderer.active_gpu,
-        &mut layer_count,
-        layers.as_mut_ptr(),
-    );
+    let mut ext = renderer.instance.unwrap().enumerate_device_extension_properties(renderer.active_gpu.unwrap()).unwrap();
+    let mut layers = renderer.instance.unwrap().enumerate_device_layer_properties(renderer.active_gpu.unwrap()).unwrap();
 
-    let mut ext: Vec<ffi::vk::VkExtensionProperties> =
-        vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
-    ffi::vk::vkEnumerateDeviceExtensionProperties(
-        renderer.active_gpu,
-        ptr::null_mut(),
-        &mut ext_count,
-        ext.as_mut_ptr(),
-    );
+    // let mut layers: Vec<ffi::vk::VkLayerProperties> =
+    //     vec![MaybeUninit::zeroed().assume_init(); layer_count as usize];
+    // ffi::vk::vkEnumerateDeviceLayerProperties(
+    //     renderer.active_gpu,
+    //     &mut layer_count,
+    //     layers.as_mut_ptr(),
+    // );
+    //
+    // let mut ext: Vec<ffi::vk::VkExtensionProperties> =
+    //     vec![MaybeUninit::zeroed().assume_init(); ext_count as usize];
+    // ffi::vk::vkEnumerateDeviceExtensionProperties(
+    //     renderer.active_gpu,
+    //     ptr::null_mut(),
+    //     &mut ext_count,
+    //     ext.as_mut_ptr(),
+    // );
 
     for layer in &layers {
-        let layer_name = CStr::from_ptr(layer.layerName.as_ptr());
+        let layer_name = CStr::from_ptr(layer.layer_name.as_ptr());
         info!("vkdevice-layer: {}", layer_name.to_string_lossy());
         // if layer_name.cmp(CString::new("VK_LAYER_RENDERDOC_Capture").unwrap().as_c_str()) == Ordering::Equal {
         // }
     }
 
     for ext in &ext {
-        let ext_name = CStr::from_ptr(ext.extensionName.as_ptr());
+        let ext_name = CStr::from_ptr(ext.extension_name.as_ptr());
         info!("vkdevice-ext: {}", ext_name.to_string_lossy());
     }
 
@@ -506,6 +507,7 @@ unsafe fn init_device(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Rende
         for extension in user_extensions {
             wanted_device_extensions.push(extension);
         }
+        renderer.instance.unwrap().enumerate_device_extension_properties(renderer.active_gpu.unwrap())
         ffi::vk::vkEnumerateDeviceExtensionProperties(
             renderer.active_gpu,
             ptr::null_mut(),
@@ -788,25 +790,26 @@ unsafe fn init_device(renderer: &mut VulkanRenderer, desc: &RenderDesc) -> Rende
 impl Renderer<VulkanAPI> for VulkanRenderer {
     unsafe fn init(_name: &CStr, desc: &RenderDesc) -> RendererResult<Arc<VulkanRenderer>> {
         let mut renderer = Arc::new_cyclic(|me| VulkanRenderer {
-            instance: ptr::null_mut(),
-            active_gpu: ptr::null_mut(),
+            entry: ash::Entry::load()?,
+            instance: None,
+            device: None,
+            active_gpu: None,
             active_gpu_properties: None,
             active_gpu_common_info: None,
             available_queue_count: vec![],
             used_queue_count: vec![],
             linked_node_count: 0,
-            device: ptr::null_mut(),
             features: VulkanSupportedFeatures::NONE,
             graphics_queue_family_index: 0,
             transfer_queue_family_index: 0,
             compute_queue_family_index: 0,
             me: me.clone(),
 
-            vma_allocator: ptr::null_mut(),
+            vma_allocator: None,
         });
         let mut mut_render = Arc::get_mut(&mut renderer).unwrap();
         // initialize instance
-        init_instance(&mut mut_render, desc)?;
+        create_instance(&mut mut_render, desc)?;
 
         // initialize device
         init_device(&mut mut_render, desc)?;
@@ -2075,23 +2078,31 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             let min_alignment = common_info.uniform_buffer_alignment;
             allocated_size = forge_math::round_up(allocated_size, min_alignment as u64);
         }
-        let mut add_info = ffi::vk::VkBufferCreateInfo {
-            sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            pNext: ptr::null_mut(),
-            flags: 0,
-            size: allocated_size,
-            usage: desc
+        let mut add_info = ash::vk::BufferCreateInfo::builder()
+            .size(allocated_size)
+            .usage(desc
                 .descriptors
-                .to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED),
-            sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
-            queueFamilyIndexCount: 0,
-            pQueueFamilyIndices: ptr::null_mut(),
-        };
+                .to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED))
+            .sharing_mode(SharingMode::EXCLUSIVE);
+
+
+        // let mut add_info = ffi::vk::VkBufferCreateInfo {
+        //     sType: ffi::vk::VkStructureType_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        //     pNext: ptr::null_mut(),
+        //     flags: 0,
+        //     size: allocated_size,
+        //     usage: desc
+        //         .descriptors
+        //         .to_vk_buffer_usage(desc.format != ImageFormat::UNDEFINED),
+        //     sharingMode: ffi::vk::VkSharingMode_VK_SHARING_MODE_EXCLUSIVE,
+        //     queueFamilyIndexCount: 0,
+        //     pQueueFamilyIndices: ptr::null_mut(),
+        // };
 
         if desc.memory_usage == ResourceMemoryUsage::GpuOnly
             || desc.memory_usage == ResourceMemoryUsage::Unknown
         {
-            add_info.usage |= ffi::vk::VkBufferUsageFlagBits_VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            add_info.usage |= BufferUsageFlags::TRANSFER_DST;
         }
 
         let mut vma_mem_reqs = ffi::vk::VmaAllocationCreateInfo {
@@ -2140,7 +2151,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         {
             let result = ffi::vk::vmaCreateBuffer(
                 self.vma_allocator,
-                &mut add_info,
+                &mut add_info.build(),
                 &mut vma_mem_reqs,
                 &mut buffer.vk_buffer,
                 &mut buffer.vma_allocation,

@@ -16,6 +16,9 @@ raw-window-handle = "0.4.2"
 winit = "0.26.1"
 cfg-if = "1.0.0"
 spirv_cross = { git = "https://github.com/grovesNL/spirv_cross.git", features = ["hlsl", "msl", "glsl"]}
+# vulkan
+ash = "0.35.1+1.2.203"
+vk-mem = "0.2.2"
 
 [features]
 default = ["vulkan"]

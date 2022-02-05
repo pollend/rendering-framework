@@ -69,6 +69,7 @@ impl<'a> Drop for VulkanCommandPool<'a> {
         unsafe {
             match Arc::get_mut(&mut self.renderer) {
                 Some(renderer) => {
+
                     assert!(renderer.device != ptr::null_mut());
                     ffi::vk::vkDestroyCommandPool(renderer.device, self.cmd_pool, ptr::null_mut());
                 }
@@ -373,16 +374,17 @@ impl Drop for VulkanPipeline {
 impl crate::Pipeline for VulkanPipeline {}
 
 pub struct VulkanRenderer {
-    pub(in crate::vulkan) instance: ffi::vk::VkInstance,
-    pub(in crate::vulkan) device: ffi::vk::VkDevice,
+    pub(in crate::vulkan) entry: ash::Entry,
+    pub(in crate::vulkan) instance: Option<ash::Instance>,
+    pub(in crate::vulkan) device: Option<ash::vk::Device>,
     pub(in crate::vulkan) features: VulkanSupportedFeatures,
 
     pub(in crate::vulkan) graphics_queue_family_index: u32,
     pub(in crate::vulkan) transfer_queue_family_index: u32,
     pub(in crate::vulkan) compute_queue_family_index: u32,
 
-    pub(in crate::vulkan) active_gpu: ffi::vk::VkPhysicalDevice,
-    pub(in crate::vulkan) active_gpu_properties: Option<ffi::vk::VkPhysicalDeviceProperties>,
+    pub(in crate::vulkan) active_gpu: Option<ash::vk::PhysicalDevice>,
+    pub(in crate::vulkan) active_gpu_properties: Option<ash::vk::PhysicalDeviceProperties>,
     pub(in crate::vulkan) active_gpu_common_info: Option<Box<GPUCommonInfo>>,
     pub(in crate::vulkan) linked_node_count: u16,
 
@@ -391,5 +393,5 @@ pub struct VulkanRenderer {
 
     pub(in crate::vulkan) me: sync::Weak<VulkanRenderer>,
 
-    pub(in crate::vulkan) vma_allocator: ffi::vk::VmaAllocator,
+    pub(in crate::vulkan) vma_allocator: Option<vk_mem::Allocator>,
 }

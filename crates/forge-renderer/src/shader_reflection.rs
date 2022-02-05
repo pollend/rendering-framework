@@ -75,7 +75,6 @@ pub fn get_shader_resource<TTarget>(ast: &Ast<TTarget>) -> Result<ShaderReflecti
     };
 
     let mut reflect_bound_resource = |reflection: &mut ShaderReflection, ast: &mut Ast<TTarget>, resources: &Vec<Resource>, resource_type: ResourceType|-> Result<(), ErrorCode> {
-        ast.active
 
         for resource in resources {
             let spirv_type = ast.get_type(resource.type_id)?;
@@ -87,7 +86,7 @@ pub fn get_shader_resource<TTarget>(ast: &Ast<TTarget>) -> Result<ShaderReflecti
                 code: resource.clone(),
                 resource_type: {
                     match &spirv_type {
-                        Type::Image | Type::SampledImage { array, array_size_literal, image} => {
+                        Type::Image { image, ..} | Type::SampledImage { image, ..} => {
                             match image.dim {
                                 Dim::DimBuffer => {
                                     match resource_type {
@@ -108,7 +107,7 @@ pub fn get_shader_resource<TTarget>(ast: &Ast<TTarget>) -> Result<ShaderReflecti
                 },
                 resource_dim: {
                     match &spirv_type {
-                        Type::Image | Type::SampledImage { array, array_size_literal, image } => {
+                        Type::Image  { image, ..} | Type::SampledImage { image , ..} => {
                             match image.dim  {
                                 Dim::DimBuffer => ResourceDim::DimBuffer,
                                 Dim::Dim1D => {

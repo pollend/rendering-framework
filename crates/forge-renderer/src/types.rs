@@ -56,6 +56,7 @@ pub enum MipMapMode {
     Linear,
 }
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum IndirectArgumentType {
     Draw,
     DrawIndex,

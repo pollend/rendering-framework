@@ -27,6 +27,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use std::ffi::CString;
+use gpu_allocator::vulkan::{Allocation, Allocator};
 use crate::types::{ShaderStage, ShaderStageFlags};
 
 #[derive(Clone)]
@@ -59,7 +60,7 @@ impl SwapChain for VulkanSwapChain {}
 
 pub struct VulkanCommandPool<'a> {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) cmd_pool: ffi::vk::VkCommandPool,
+    pub(in crate::vulkan) cmd_pool: ash::vk::CommandPool,
     pub(in crate::vulkan) queue: &'a VulkanQueue,
 }
 
@@ -110,9 +111,9 @@ impl RootSignature for VulkanRootSignature {}
 
 pub struct VulkanCommand<'a> {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) cmd_buf: ffi::vk::VkCommandBuffer,
-    pub(in crate::vulkan) active_render_pass: ffi::vk::VkRenderPass,
-    pub(in crate::vulkan) bound_pipeline_layout: ffi::vk::VkPipelineLayout,
+    pub(in crate::vulkan) cmd_buf: ash::vk::CommandBuffer,
+    pub(in crate::vulkan) active_render_pass: ash::vk::RenderPass,
+    pub(in crate::vulkan) bound_pipeline_layout: ash::vk::PipelineLayout,
 
     pub(in crate::vulkan) pool: &'a VulkanCommandPool<'a>,
 }
@@ -150,8 +151,8 @@ pub struct VulkanRenderContext {
 impl RenderContext for VulkanRenderContext {}
 
 pub struct VulkanRenderTarget {
-    pub(in crate::vulkan) descriptor: ffi::vk::VkImageView,
-    pub(in crate::vulkan) slice_descriptors: Vec<ffi::vk::VkImageView>,
+    pub(in crate::vulkan) descriptor: ash::vk::ImageView,
+    pub(in crate::vulkan) slice_descriptors: Vec<ash::vk::ImageView>,
     pub(in crate::vulkan) id: u32,
 
     pub(in crate::vulkan) array_size: u32,
@@ -171,7 +172,7 @@ impl RenderTarget for VulkanRenderTarget {}
 
 pub struct VulkanSampler {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) sampler: ffi::vk::VkSampler,
+    pub(in crate::vulkan) sampler: ash::vk::Sampler,
 }
 
 impl Drop for VulkanSampler {
@@ -202,7 +203,7 @@ pub struct VulkanShader {
     pub(in crate::vulkan) render: Arc<VulkanRenderer>,
     pub(in crate::vulkan) stages: ShaderStageFlags,
 
-    pub(in crate::vulkan) shader_module: Vec<Option<(CString, ffi::vk::VkShaderModule)>>,
+    pub(in crate::vulkan) shader_module: Vec<Option<(CString, ash::vk::ShaderModule)>>,
 }
 
 impl Drop for VulkanShader {
@@ -231,16 +232,17 @@ impl Shader for VulkanShader {}
 
 pub struct VulkanTexture {
     /// Opaque handle used by shaders for doing read/write operations on the texture
-    pub vk_srv_descriptor: ffi::vk::VkImageView,
+    pub vk_srv_descriptor: ash::vk::ImageView,
     /// Opaque handle used by shaders for doing read/write operations on the texture
-    pub vk_uav_descriptors: Vec<ffi::vk::VkImageView>,
+    pub vk_uav_descriptors: Vec<ash::vk::ImageView>,
     /// Opaque handle used by shaders for doing read/write operations on the texture
-    pub vk_srv_stencil_descriptor: ffi::vk::VkImageView,
+    pub vk_srv_stencil_descriptor: ash::vk::ImageView,
     /// Native handle of the underlying resource
-    pub vk_image: ffi::vk::VkImage,
+    pub vk_image: ash::vk::Image,
 
-    pub vma_memory: ffi::vk::VmaAllocation,
-    pub vk_device_memory: ffi::vk::VkDeviceMemory,
+    pub allocation: Allocation,
+    // pub vma_memory: ffi::vk::VmaAllocation,
+    pub vk_device_memory: ash::vk::DeviceMemory,
 
     /// Current state of the buffer
     pub width: u32,
@@ -262,7 +264,7 @@ impl Texture for VulkanTexture {}
 
 pub struct VulkanSemaphore {
     pub(in crate::vulkan) render: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) semaphore: ffi::vk::VkSemaphore,
+    pub(in crate::vulkan) semaphore: ash::vk::Semaphore,
     pub(in crate::vulkan) current_node: u32,
     pub(in crate::vulkan) signaled: bool,
 }
@@ -274,9 +276,9 @@ impl Drop for VulkanSemaphore {
             Some(renderer) => {
                 assert!(renderer.device != ptr::null_mut());
                 unsafe {
-                    ffi::vk::vkDestroySemaphore(renderer.device, self.semaphore, ptr::null_mut());
+                    renderer.device.destroy_semaphore(self.semaphore, None);
                 }
-                self.semaphore = ptr::null_mut();
+                self.semaphore = ash::vk::Semaphore::null();
             }
             None => {
                 assert!(false, "failed to correctly dispose of semaphore");
@@ -289,12 +291,12 @@ impl Semaphore for VulkanSemaphore {}
 
 pub struct VulkanQueue {
     pub(in crate::vulkan) render: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) queue: ffi::vk::VkQueue,
+    pub(in crate::vulkan) queue: ash::vk::Queue,
     pub(in crate::vulkan) submission_mutex: Mutex<()>,
 
     pub(in crate::vulkan) family_index: u32,
     pub(in crate::vulkan) queue_index: u32,
-    pub(in crate::vulkan) queue_flag: ffi::vk::VkQueueFlags,
+    pub(in crate::vulkan) queue_flag: ash::vk::QueueFlags,
 
     pub(in crate::vulkan) queue_type: QueueType,
     pub(in crate::vulkan) node_index: u32,
@@ -319,7 +321,7 @@ impl Drop for VulkanQueue {
 
 pub struct VulkanFence {
     pub(in crate::vulkan) render: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) fence: ffi::vk::VkFence,
+    pub(in crate::vulkan) fence: ash::vk::Fence,
     pub(in crate::vulkan) submitted: bool,
 }
 
@@ -375,17 +377,20 @@ impl crate::Pipeline for VulkanPipeline {}
 
 pub struct VulkanRenderer {
     pub(in crate::vulkan) entry: ash::Entry,
-    pub(in crate::vulkan) instance: Option<ash::Instance>,
-    pub(in crate::vulkan) device: Option<ash::vk::Device>,
+    pub(in crate::vulkan) instance: ash::Instance,
+    pub(in crate::vulkan) device: ash::Device,
+    pub(in crate::vulkan) swapchain_loader: ash::extensions::khr::Swapchain,
+    pub(in crate::vulkan) surface_loader: ash::extensions::khr::Surface,
+
     pub(in crate::vulkan) features: VulkanSupportedFeatures,
 
     pub(in crate::vulkan) graphics_queue_family_index: u32,
     pub(in crate::vulkan) transfer_queue_family_index: u32,
     pub(in crate::vulkan) compute_queue_family_index: u32,
 
-    pub(in crate::vulkan) active_gpu: Option<ash::vk::PhysicalDevice>,
-    pub(in crate::vulkan) active_gpu_properties: Option<ash::vk::PhysicalDeviceProperties>,
-    pub(in crate::vulkan) active_gpu_common_info: Option<Box<GPUCommonInfo>>,
+    pub(in crate::vulkan) active_gpu: ash::vk::PhysicalDevice,
+    pub(in crate::vulkan) active_gpu_properties: ash::vk::PhysicalDeviceProperties,
+    pub(in crate::vulkan) active_gpu_common_info: Box<GPUCommonInfo>,
     pub(in crate::vulkan) linked_node_count: u16,
 
     pub(in crate::vulkan) available_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
@@ -393,5 +398,5 @@ pub struct VulkanRenderer {
 
     pub(in crate::vulkan) me: sync::Weak<VulkanRenderer>,
 
-    pub(in crate::vulkan) vma_allocator: Option<vk_mem::Allocator>,
+    pub(in crate::vulkan) allocator: Allocator,
 }

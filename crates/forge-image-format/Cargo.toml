@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkan_sys = { path = "../vulkan_sys" }
+#vulkan_sys = { path = "../vulkan_sys" }
+ash = "0.35.1+1.2.203"
 #winapi = { version = "0.3.9", features = ["dxgiformat"] }
 #winapi = { version = "0.3", features = ["libloaderapi", "windef", "winuser"] }

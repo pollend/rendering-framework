@@ -2,6 +2,7 @@ use std::borrow::BorrowMut;
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::Arc;
+use gpu_allocator::vulkan::{Allocation, Allocator};
 use log::error;
 use crate::{Buffer, check_vk_result, ffi, VulkanAPI};
 use crate::types::{DescriptorType, ResourceMemoryUsage};
@@ -14,8 +15,10 @@ pub struct VulkanBuffer {
     pub(in crate::vulkan) vk_storage_texel_view: ffi::vk::VkBufferView,
     pub(in crate::vulkan) vk_uniform_texel_view: ffi::vk::VkBufferView,
 
-    pub(in crate::vulkan) vma_allocation: ffi::vk::VmaAllocation,
-    pub(in crate::vulkan) mapping_address: *mut c_void,
+    // pub(in crate::vulkan) vma_allocation: ffi::vk::VmaAllocation,
+    // pub(in crate::vulkan) mapping_address: *mut c_void,
+
+    pub(in crate::vulkan) allocation: Allocation,
 
     pub(in crate::vulkan) offset: u64,
 

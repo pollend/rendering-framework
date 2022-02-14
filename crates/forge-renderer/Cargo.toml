@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkan_sys = { path = "../vulkan_sys" }
 forge_math = { path = "../forge-math" }
 forge_image_format = { path = "../forge-image-format" }
 log = "0.4"
@@ -18,7 +17,7 @@ cfg-if = "1.0.0"
 spirv_cross = { git = "https://github.com/grovesNL/spirv_cross.git", features = ["hlsl", "msl", "glsl"]}
 # vulkan
 ash = "0.35.1+1.2.203"
-vk-mem = "0.2.2"
+gpu-allocator = "0.16.0"
 
 [features]
 default = ["vulkan"]

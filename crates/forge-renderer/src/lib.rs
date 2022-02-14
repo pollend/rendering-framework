@@ -2,6 +2,9 @@
 #![feature(arc_new_cyclic)]
 #![feature(generic_associated_types)]
 
+extern crate core;
+extern crate core;
+
 use crate::{
     desc::{
         BufferDesc, CmdDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,

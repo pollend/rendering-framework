@@ -10,10 +10,10 @@ use crate::vulkan::VulkanRenderer;
 
 pub struct VulkanBuffer {
     pub(in crate::vulkan) renderer: Arc<VulkanRenderer>,
-    pub(in crate::vulkan) vk_buffer: ffi::vk::VkBuffer,
+    pub(in crate::vulkan) vk_buffer: ash::vk::Buffer,
     /// Buffer view
-    pub(in crate::vulkan) vk_storage_texel_view: ffi::vk::VkBufferView,
-    pub(in crate::vulkan) vk_uniform_texel_view: ffi::vk::VkBufferView,
+    pub(in crate::vulkan) vk_storage_texel_view: ash::vk::BufferView,
+    pub(in crate::vulkan) vk_uniform_texel_view: ash::vk::BufferView,
 
     // pub(in crate::vulkan) vma_allocation: ffi::vk::VmaAllocation,
     // pub(in crate::vulkan) mapping_address: *mut c_void,
@@ -37,29 +37,20 @@ impl Drop for VulkanBuffer {
             Some(renderer) => {
 
                 unsafe {
-                    if self.vk_storage_texel_view != ptr::null_mut() {
-                        ffi::vk::vkDestroyBufferView(
-                            renderer.device,
-                            self.vk_storage_texel_view,
-                            ptr::null_mut(),
-                        );
-                        self.vk_storage_texel_view = ptr::null_mut();
+                    if self.vk_storage_texel_view != ash::vk::BufferView::null() {
+                        renderer.device.destroy_buffer_view(self.vk_storage_texel_view, None);
+                        self.vk_storage_texel_view = ash::vk::BufferView::null();
                     }
 
                     if self.vk_uniform_texel_view != ptr::null_mut() {
-                        ffi::vk::vkDestroyBufferView(
-                            renderer.device,
-                            self.vk_uniform_texel_view,
-                            ptr::null_mut(),
-                        );
-                        self.vk_storage_texel_view = ptr::null_mut();
+                        renderer.device.destroy_buffer_view(self.vk_uniform_texel_view, None);
+                        self.vk_storage_texel_view = ash::vk::BufferView::null();
                     }
-
-                    ffi::vk::vmaDestroyBuffer(
-                        renderer.vma_allocator,
-                        self.vk_buffer,
-                        self.vma_allocation,
-                    );
+                    // ffi::vk::vmaDestroyBuffer(
+                    //     renderer.vma_allocator,
+                    //     self.vk_buffer,
+                    //     self.vma_allocation,
+                    // );
                 }
             }
         }
@@ -98,7 +89,8 @@ impl Buffer<VulkanAPI> for VulkanBuffer {
                 error!("failed to map buffer")
             }
             Some(renderer) => {
-                ffi::vk::vmaUnmapMemory(renderer.vma_allocator, self.vma_allocation);
+
+                // ffi::vk::vmaUnmapMemory(renderer.vma_allocator, self.vma_allocation);
                 self.mapping_address = ptr::null_mut();
             }
         }

@@ -27,6 +27,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use std::ffi::CString;
+use ash::prelude::VkResult;
+use ash::vk::CommandPoolResetFlags;
 use gpu_allocator::vulkan::{Allocation, Allocator};
 use crate::types::{ShaderStage, ShaderStageFlags};
 
@@ -72,7 +74,7 @@ impl<'a> Drop for VulkanCommandPool<'a> {
                 Some(renderer) => {
 
                     assert!(renderer.device != ptr::null_mut());
-                    ffi::vk::vkDestroyCommandPool(renderer.device, self.cmd_pool, ptr::null_mut());
+                    renderer.device.destroy_command_pool(self.cmd_pool, None);
                 }
                 None => {
                     assert!(false, "failed to correctly dispose of command pool");
@@ -89,10 +91,11 @@ impl<'a> CommandPool for VulkanCommandPool<'a> {
             Some(renderer) => {
                 assert!(renderer.device != ptr::null_mut());
                 unsafe {
-                    let result = ffi::vk::vkResetCommandPool(renderer.device, self.cmd_pool, 0);
-                    if result != ffi::vk::VkResult_VK_SUCCESS {
-                        return Err(VulkanError(result));
-                    }
+                    renderer.device.reset_command_pool(self.cmd_pool, CommandPoolResetFlags::empty());
+                    // let result = ffi::vk::vkResetCommandPool(renderer.device, self.cmd_pool, 0);
+                    // if result != ffi::vk::VkResult_VK_SUCCESS {
+                    //     return Err(VulkanError(result));
+                    // }
                 }
             }
             None => {
@@ -129,13 +132,7 @@ impl<'a> Drop for VulkanCommand<'a> {
                 assert!(renderer.device != ptr::null_mut());
                 assert!(self.pool.cmd_pool != ptr::null_mut());
                 unsafe {
-                    ffi::vk::vkFreeCommandBuffers(
-                        renderer.device,
-                        self.pool.cmd_pool,
-                        1,
-                        &mut self.cmd_buf,
-                    );
-                    self.cmd_buf = ptr::null_mut();
+                    renderer.device.free_command_buffers(self.pool.cmd_pool, [self.cmd_buf].as_slice());
                 }
             }
         }
@@ -184,10 +181,12 @@ impl Drop for VulkanSampler {
             }
             Some(renderer) => {
                 assert!(renderer.device != ptr::null_mut());
+
                 unsafe {
-                    ffi::vk::vkDestroySampler(renderer.device, self.sampler, ptr::null_mut());
+                    renderer.device.destroy_sampler(self.sampler, None);
+                    // ffi::vk::vkDestroySampler(renderer.device, self.sampler, ptr::null_mut());
                 }
-                self.sampler = ptr::null_mut();
+                self.sampler = ash::vk::Sampler::null();
             }
         }
     }
@@ -217,7 +216,8 @@ impl Drop for VulkanShader {
                     match module {
                         Some((str, mut shader) ) => {
                             unsafe {
-                                ffi::vk::vkDestroyShaderModule(renderer.device, shader, ptr::null_mut());
+                                renderer.device.destroy_shader_module(shader, None);
+                                // ffi::vk::vkDestroyShaderModule(renderer.device, shader, ptr::null_mut());
                             }
                         },
                         None => {}
@@ -332,9 +332,9 @@ impl Drop for VulkanFence {
             Some(renderer) => {
                 assert!(renderer.device != ptr::null_mut());
                 unsafe {
-                    ffi::vk::vkDestroyFence(renderer.device, self.fence, ptr::null_mut());
+                    renderer.device.destroy_fence(self.fence, None);
                 }
-                self.fence = ptr::null_mut();
+                self.fence = ash::vk::Fence::null();
             }
             None => {
                 assert!(false, "failed to correctly dispose of fence");
@@ -346,11 +346,15 @@ impl Drop for VulkanFence {
 impl Fence<VulkanAPI> for VulkanFence {
     unsafe fn status(&mut self, render: &VulkanRenderer) -> FenceStatus {
         if self.submitted {
-            let result = ffi::vk::vkGetFenceStatus(render.device, self.fence);
-            if result == ffi::vk::VkResult_VK_SUCCESS {
-                ffi::vk::vkResetFences(render.device, 1, &mut self.fence);
-                self.submitted = false;
-                return FenceStatus::Complete;
+            match  self.render.device.get_fence_status(self.fence) {
+                Ok(success) => {
+                    if success {
+                        render.device.reset_fences([self.fence].as_slice());
+                        self.submitted = false;
+                        return FenceStatus::Complete;
+                    }
+                }
+                Err(_) => {}
             }
             return FenceStatus::Incomplete;
         }

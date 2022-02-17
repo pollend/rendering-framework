@@ -20,8 +20,5 @@ ash = "0.35.1+1.2.203"
 gpu-allocator = "0.16.0"
 
 [features]
-default = ["vulkan"]
-vulkan = []
-xlib = ["vulkan_sys/vulkan-xlib"]
-xcb = ["vulkan_sys/vulkan-xcb"]
+default = []
 

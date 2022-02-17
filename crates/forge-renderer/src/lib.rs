@@ -4,6 +4,7 @@
 
 extern crate core;
 extern crate core;
+extern crate core;
 
 use crate::{
     desc::{
@@ -156,7 +157,7 @@ pub trait Command<A: Api>: Sized {
     unsafe fn cmd_bind_index_buffer(&self);
     unsafe fn cmd_raw(&self);
     unsafe fn cmd_draw_instanced(
-        &self,
+        &mut self,
         vertex_count: u32,
         first_vertex: u32,
         instance_count: u32,
@@ -164,7 +165,7 @@ pub trait Command<A: Api>: Sized {
     );
     unsafe fn cmd_draw_indexed(&self, index_count: u32, first_index: u32, first_vertex: i32);
     unsafe fn cmd_draw_indexed_instanced(
-        &self,
+        &mut self,
         index_count: u32,
         first_index: u32,
         instance_count: u32,
@@ -192,7 +193,7 @@ pub trait Texture {}
 pub trait Shader {}
 
 pub trait Queue<A: Api> {
-    unsafe fn submit(&self, desc: &mut QueueSubmitDesc<A>) -> RendererResult<()>;
+    unsafe fn submit(&mut self, desc: &mut QueueSubmitDesc<A>) -> RendererResult<()>;
     unsafe fn present(&self, desc: &mut QueuePresentDesc<A>) -> RendererResult<FenceStatus>;
     unsafe fn wait_idle(&self);
     unsafe fn wait_fence(&self);

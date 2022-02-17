@@ -1,4 +1,3 @@
-use core::slice::SlicePattern;
 use crate::{check_vk_result, desc::{CmdDesc, RenderDescImp}, error::{RendererError, RendererError::VulkanError}, ffi, ffi::vk, types::{
     BufferCreationFlag, CompareMode, DescriptorType, FilterType, MipMapMode, QueueType,
     ResourceMemoryUsage, ResourceState, SampleCount, TextureCreationFlags,
@@ -31,7 +30,7 @@ use std::{
 };
 use std::ops::DerefMut;
 use ash::{Entry, Instance};
-use ash::vk::{BufferUsageFlags, ColorSpaceKHR, DeviceMemory, DeviceSize, FormatFeatureFlags, SharingMode, SurfaceFormatKHR};
+use ash::vk::{BufferUsageFlags, ColorSpaceKHR, DeviceMemory, DeviceSize, FormatFeatureFlags, ImageViewCreateInfo, SharingMode, SurfaceFormatKHR};
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use winit::event::VirtualKeyCode::N;
 use crate::desc::BinaryShaderStageDesc;
@@ -684,7 +683,7 @@ pub unsafe fn wanted_extensions(desc: &RenderDesc) -> (HashSet<CString>, HashSet
     let mut wanted_instance_extensions: HashSet<CString> = HashSet::new();
     let mut wanted_instance_layers: HashSet<CString> = HashSet::new();
     for ext in GLOBAL_INSTANCE_EXTENSIONS {
-        wanted_instance_extensions.insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
+        wanted_instance_extensions.insert(CString::from(ext));
     }
     match &desc.imp {
         RenderDescImp::Vulkan(vk) => {
@@ -708,7 +707,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         let mut wanted_instance_extensions: HashSet<CString> = HashSet::new();
         let mut wanted_instance_layers: HashSet<CString> = HashSet::new();
         for ext in GLOBAL_INSTANCE_EXTENSIONS {
-            wanted_instance_extensions.insert(CString::from(CStr::from_bytes_with_nul_unchecked(ext)));
+            wanted_instance_extensions.insert(CString::from(ext));
         }
         match &desc.imp {
             RenderDescImp::Vulkan(vk) => {
@@ -739,7 +738,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         let mut wanted_device_extensions: Vec<&CStr> =
             Vec::with_capacity(GLOBAL_WANTED_DEVICE_EXTENSIONS.len() + user_extensions.len());
         for extension in GLOBAL_WANTED_DEVICE_EXTENSIONS {
-            wanted_device_extensions.push(CStr::from_bytes_with_nul_unchecked(extension));
+            wanted_device_extensions.push(extension);
         }
         for extension in user_extensions {
             wanted_device_extensions.push(extension);
@@ -950,7 +949,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         }).unwrap();
 
         let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, active_gpu);
-        let surface_loader = ash::extensions::khr::Surface::new(&instance, active_gpu);
+        let surface_loader = ash::extensions::khr::Surface::new(&entry, active_gpu);
 
         let device = instance.create_device(active_gpu, &create_info, None).unwrap();
         let mut renderer = Arc::new_cyclic(|me| VulkanRenderer {
@@ -1895,7 +1894,14 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
         }
 
         if descriptors.contains(DescriptorType::DESCRIPTOR_TYPE_RW_TEXTURE) {
-            let mut uav_desc: ffi::vk::VkImageViewCreateInfo = srv_desc.clone();
+            // let mut uav_desc: ffi::vk::VkImageViewCreateInfo = ImageViewCreateInfo::builder();
+            // uav_desc.inner = srv_desc;
+            let mut uav_desc = srv_desc;
+            if srv_desc.view_type == ash::vk::ImageViewType::CUBE_ARRAY
+                || srv_desc.view_type == ash::vk::ImageViewType::CUBE_ARRAY {
+                uav_desc = uav_desc.view_type(ash::vk::ImageViewType::TYPE_2D_ARRAY);
+            }
+
             // #NOTE : We dont support imageCube, imageCubeArray for consistency with other APIs
             // All cubemaps will be used as image2DArray for Image Load / Store ops
             if uav_desc.viewType == ffi::vk::VkImageViewType_VK_IMAGE_VIEW_TYPE_CUBE_ARRAY
@@ -1906,15 +1912,7 @@ impl Renderer<VulkanAPI> for VulkanRenderer {
             texture.vk_uav_descriptors = vec![ash::vk::ImageView::null(); desc.mip_levels as usize];
             for i in 0..desc.mip_levels {
                 uav_desc.subresourceRange.baseMipLevel = i;
-                let result = ffi::vk::vkCreateImageView(
-                    self.device,
-                    &mut uav_desc,
-                    ptr::null_mut(),
-                    &mut texture.vk_uav_descriptors[i as usize],
-                );
-                if result != ffi::vk::VkResult_VK_SUCCESS {
-                    return Err(VulkanError(result));
-                }
+                texture.vk_uav_descriptors[i as usize]  = self.device.create_image_view(&uav_desc, None).unwrap();
             }
         }
 

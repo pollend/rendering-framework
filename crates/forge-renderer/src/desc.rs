@@ -2,14 +2,13 @@ use crate::{
     types::{
         AddressMode, BufferCreationFlag, CompareMode, DescriptorType, FilterType,
         IndirectArgumentType, MipMapMode, QueueFlag, QueuePriority, QueueType, ResourceMemoryUsage,
-        ResourceState, SampleCount, TextureCreationFlags,
+        ResourceState, RootSignatureFlags, SampleCount, ShaderStageFlags, TextureCreationFlags,
     },
     Api,
 };
 use forge_image_format::ImageFormat;
 use raw_window_handle::HasRawWindowHandle;
 use std::ffi::{c_void, CStr, CString};
-use crate::types::{RootSignatureFlags, ShaderStageFlags};
 
 pub struct VulkanRenderDesc {
     pub instance_layers: Vec<CString>,
@@ -70,7 +69,7 @@ pub struct PipelineDesc<'a, T: Api> {
 pub struct RootSignatureDesc<'a, T: Api> {
     pub shader: Vec<&'a T::Shader>,
     pub sampler: Vec<(CString, &'a T::Sampler)>,
-    pub flags: RootSignatureFlags
+    pub flags: RootSignatureFlags,
 }
 
 pub struct SamplerFormatDesc {}
@@ -198,11 +197,11 @@ pub struct RenderTargetDesc {
 pub struct BinaryShaderStageDesc {
     pub byte_code: *const u32,
     pub byte_code_size: u32,
-    pub entry_point_name: CString
+    pub entry_point_name: CString,
 }
 
 pub struct BinaryShaderDesc {
     pub stages: ShaderStageFlags,
     pub shaders: Vec<BinaryShaderStageDesc>,
-    pub constants: Vec<CString>
+    pub constants: Vec<CString>,
 }

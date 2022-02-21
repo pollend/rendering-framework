@@ -1,3 +1,4 @@
+mod buffer;
 mod command;
 mod desc;
 mod device;
@@ -5,32 +6,29 @@ mod fence;
 mod queue;
 mod renderer;
 mod types;
-mod buffer;
 
 pub use buffer::*;
 
 use crate::{
     error::RendererError::VulkanError,
-    ffi,
-    types::{DescriptorType, QueueType, ResourceMemoryUsage, SampleCount},
-    vulkan::types::{VulkanSupportedFeatures, MAX_QUEUE_FLAGS},
+    types::{
+        DescriptorType, QueueType, ResourceMemoryUsage, SampleCount, ShaderStage, ShaderStageFlags,
+    },
+    vulkan::types::{VulkanSupportedFeatures},
     APIType, Buffer, Command, CommandPool, DescriptorIndexMap, Fence, FenceStatus, GPUCommonInfo,
     Queue, RenderContext, RenderTarget, RendererResult, RootSignature, Sampler, Semaphore, Shader,
     SwapChain, Texture,
 };
+use ash::{prelude::VkResult, vk::CommandPoolResetFlags};
 use forge_image_format::ImageFormat;
+use gpu_allocator::vulkan::{Allocation, Allocator};
 use std::{
     f32::consts::E,
-    ffi::c_void,
+    ffi::{c_void, CString},
     os::{linux::raw::stat, raw::c_float},
     ptr, sync,
     sync::{Arc, Mutex},
 };
-use std::ffi::CString;
-use ash::prelude::VkResult;
-use ash::vk::CommandPoolResetFlags;
-use gpu_allocator::vulkan::{Allocation, Allocator};
-use crate::types::{ShaderStage, ShaderStageFlags};
 
 #[derive(Clone)]
 pub struct VulkanAPI;
@@ -68,12 +66,10 @@ pub struct VulkanCommandPool<'a> {
 
 impl<'a> Drop for VulkanCommandPool<'a> {
     fn drop(&mut self) {
-        assert!(self.cmd_pool != ptr::null_mut());
+        assert_ne!(self.cmd_pool, ash::vk::CommandPool::null());
         unsafe {
             match Arc::get_mut(&mut self.renderer) {
                 Some(renderer) => {
-
-                    assert!(renderer.device != ptr::null_mut());
                     renderer.device.destroy_command_pool(self.cmd_pool, None);
                 }
                 None => {
@@ -86,12 +82,14 @@ impl<'a> Drop for VulkanCommandPool<'a> {
 
 impl<'a> CommandPool for VulkanCommandPool<'a> {
     fn reset(&mut self) -> RendererResult<()> {
-        assert!(self.cmd_pool != ptr::null_mut());
+        assert_ne!(self.cmd_pool, ash::vk::CommandPool::null());
         match Arc::get_mut(&mut self.renderer) {
             Some(renderer) => {
-                assert!(renderer.device != ptr::null_mut());
+                // assert!(renderer.device != ptr::null_mut());
                 unsafe {
-                    renderer.device.reset_command_pool(self.cmd_pool, CommandPoolResetFlags::empty());
+                    renderer
+                        .device
+                        .reset_command_pool(self.cmd_pool, CommandPoolResetFlags::empty());
                     // let result = ffi::vk::vkResetCommandPool(renderer.device, self.cmd_pool, 0);
                     // if result != ffi::vk::VkResult_VK_SUCCESS {
                     //     return Err(VulkanError(result));
@@ -106,9 +104,7 @@ impl<'a> CommandPool for VulkanCommandPool<'a> {
     }
 }
 
-pub struct VulkanRootSignature {
-
-}
+pub struct VulkanRootSignature {}
 
 impl RootSignature for VulkanRootSignature {}
 
@@ -123,16 +119,18 @@ pub struct VulkanCommand<'a> {
 
 impl<'a> Drop for VulkanCommand<'a> {
     fn drop(&mut self) {
-        assert!(self.cmd_buf != ptr::null_mut());
+        assert_ne!(self.cmd_buf, ash::vk::CommandBuffer::null());
         match Arc::get_mut(&mut self.renderer) {
             None => {
                 assert!(false, "failed to correctly dispose of command pool");
             }
             Some(renderer) => {
-                assert!(renderer.device != ptr::null_mut());
-                assert!(self.pool.cmd_pool != ptr::null_mut());
+                // assert!(renderer.device != ptr::null_mut());
+                assert_ne!(self.pool.cmd_pool, ash::vk::CommandPool::null());
                 unsafe {
-                    renderer.device.free_command_buffers(self.pool.cmd_pool, [self.cmd_buf].as_slice());
+                    renderer
+                        .device
+                        .free_command_buffers(self.pool.cmd_pool, [self.cmd_buf].as_slice());
                 }
             }
         }
@@ -140,8 +138,8 @@ impl<'a> Drop for VulkanCommand<'a> {
 }
 
 pub struct VulkanRenderContext {
-    gpu: ffi::vk::VkPhysicalDevice,
-    gpu_properties: ffi::vk::VkPhysicalDeviceProperties2,
+    gpu: ash::vk::PhysicalDevice,
+    gpu_properties: ash::vk::PhysicalDeviceProperties2,
     common: GPUCommonInfo,
 }
 
@@ -174,13 +172,13 @@ pub struct VulkanSampler {
 
 impl Drop for VulkanSampler {
     fn drop(&mut self) {
-        assert!(self.sampler != ptr::null_mut());
+        assert_ne!(self.sampler, ash::vk::Sampler::null());
         match Arc::get_mut(&mut self.renderer) {
             None => {
                 assert!(false, "failed to correctly dispose of sampler");
             }
             Some(renderer) => {
-                assert!(renderer.device != ptr::null_mut());
+                // assert!(renderer.device != ptr::null_mut());
 
                 unsafe {
                     renderer.device.destroy_sampler(self.sampler, None);
@@ -214,12 +212,12 @@ impl Drop for VulkanShader {
             Some(renderer) => {
                 for module in &self.shader_module {
                     match module {
-                        Some((str, mut shader) ) => {
+                        Some((str, mut shader)) => {
                             unsafe {
                                 renderer.device.destroy_shader_module(shader, None);
                                 // ffi::vk::vkDestroyShaderModule(renderer.device, shader, ptr::null_mut());
                             }
-                        },
+                        }
                         None => {}
                     }
                 }
@@ -271,10 +269,9 @@ pub struct VulkanSemaphore {
 
 impl Drop for VulkanSemaphore {
     fn drop(&mut self) {
-        assert!(self.semaphore != ptr::null_mut());
+        assert_ne!(self.semaphore, ash::vk::Semaphore::null());
         match Arc::get_mut(&mut self.render) {
             Some(renderer) => {
-                assert!(renderer.device != ptr::null_mut());
                 unsafe {
                     renderer.device.destroy_semaphore(self.semaphore, None);
                 }
@@ -304,13 +301,13 @@ pub struct VulkanQueue {
 
 impl Drop for VulkanQueue {
     fn drop(&mut self) {
-        assert!(self.queue != ptr::null_mut());
+        assert_ne!(self.queue, ash::vk::Queue::null());
         let node_index = 0;
         let queue_flags = self.queue_flag;
 
         match Arc::get_mut(&mut self.render) {
             Some(renderer) => {
-                renderer.used_queue_count[node_index as usize][queue_flags as usize] -= 1;
+                renderer.used_queue_count[node_index as usize][queue_flags.as_raw() as usize] -= 1;
             }
             None => {
                 assert!(false, "failed to correctly dispose of fence");
@@ -327,10 +324,9 @@ pub struct VulkanFence {
 
 impl Drop for VulkanFence {
     fn drop(&mut self) {
-        assert!(self.fence != ptr::null_mut());
+        assert_ne!(self.fence, ash::vk::Fence::null());
         match Arc::get_mut(&mut self.render) {
             Some(renderer) => {
-                assert!(renderer.device != ptr::null_mut());
                 unsafe {
                     renderer.device.destroy_fence(self.fence, None);
                 }
@@ -346,7 +342,7 @@ impl Drop for VulkanFence {
 impl Fence<VulkanAPI> for VulkanFence {
     unsafe fn status(&mut self, render: &VulkanRenderer) -> FenceStatus {
         if self.submitted {
-            match  self.render.device.get_fence_status(self.fence) {
+            match self.render.device.get_fence_status(self.fence) {
                 Ok(success) => {
                     if success {
                         render.device.reset_fences([self.fence].as_slice());
@@ -363,12 +359,12 @@ impl Fence<VulkanAPI> for VulkanFence {
 }
 
 pub struct VulkanPipeline {
-    renderer: Arc<VulkanRenderer>,
-    pipeline: ffi::vk::VkPipeline, // PipelineType mType;
-                                   // uint32_t     mShaderStageCount;
-                                   //In DX12 this information is stored in ID3D12StateObject.
-                                   //But for Vulkan we need to store it manually
-                                   // const char** ppShaderStageNames;
+    pub(in crate::vulkan)  renderer: Arc<VulkanRenderer>,
+    pub(in crate::vulkan)  pipeline: ash::vk::Pipeline, // PipelineType mType;
+                                 // uint32_t     mShaderStageCount;
+                                 //In DX12 this information is stored in ID3D12StateObject.
+                                 //But for Vulkan we need to store it manually
+                                 // const char** ppShaderStageNames;
 }
 
 impl Drop for VulkanPipeline {
@@ -397,8 +393,8 @@ pub struct VulkanRenderer {
     pub(in crate::vulkan) active_gpu_common_info: Box<GPUCommonInfo>,
     pub(in crate::vulkan) linked_node_count: u16,
 
-    pub(in crate::vulkan) available_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
-    pub(in crate::vulkan) used_queue_count: Vec<[u32; MAX_QUEUE_FLAGS as usize]>,
+    pub(in crate::vulkan) available_queue_count: Vec<Box<[u32]>>,
+    pub(in crate::vulkan) used_queue_count: Vec<Box<[u32]>>,
 
     pub(in crate::vulkan) me: sync::Weak<VulkanRenderer>,
 

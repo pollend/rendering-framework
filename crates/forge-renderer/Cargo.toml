@@ -18,6 +18,7 @@ spirv_cross = { git = "https://github.com/grovesNL/spirv_cross.git", features = 
 # vulkan
 ash = "0.35.1+1.2.203"
 gpu-allocator = "0.16.0"
+lazy_static = "1.4.0"
 
 [features]
 default = []

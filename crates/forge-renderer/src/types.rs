@@ -86,7 +86,7 @@ pub enum ShaderStage {
     Fragment,
     Compute,
     Raytracing,
-    Count
+    Count,
 }
 
 bitflags! {
@@ -117,7 +117,6 @@ bitflags! {
         const LOCAL_FLAG = 0x1;
     }
 }
-
 
 bitflags! {
     pub struct ResourceState: u32 {

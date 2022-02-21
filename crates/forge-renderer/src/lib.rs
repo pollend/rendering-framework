@@ -3,13 +3,12 @@
 #![feature(generic_associated_types)]
 
 extern crate core;
-extern crate core;
-extern crate core;
 
 use crate::{
     desc::{
-        BufferDesc, CmdDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc, QueueSubmitDesc, RenderDesc,
-        RenderTargetDesc, RootSignatureDesc, SamplerDesc, SwapChainDesc, TextureDesc,
+        BinaryShaderDesc, BufferDesc, CmdDesc, CmdPoolDesc, QueueDesc, QueuePresentDesc,
+        QueueSubmitDesc, RenderDesc, RenderTargetDesc, RootSignatureDesc, SamplerDesc,
+        SwapChainDesc, TextureDesc,
     },
     error::RendererResult,
     types::{FenceStatus, GPUPresetLevel, GPUSupportedFeatures, ShadingRates},
@@ -19,17 +18,16 @@ use std::{
     ffi::{CStr, CString},
     sync::Arc,
 };
-use crate::desc::BinaryShaderDesc;
 
 mod desc;
 mod error;
+mod shader_reflection;
 mod types;
 mod vulkan;
-mod shader_reflection;
-
-pub mod ffi {
-    pub use vulkan_sys as vk;
-}
+//
+// pub mod ffi {
+//     pub use vulkan_sys as vk;
+// }
 
 pub struct GPUVendorInfo {
     vendor_id: CString,
@@ -102,7 +100,7 @@ pub trait Renderer<A: Api>: Sized {
 
     // internal utilities
     unsafe fn add_pipeline(&self) -> A::Pipeline;
-    unsafe fn drop_pipeline(&self, pipeline: &mut A::Pipeline);
+    unsafe fn drop_pipeline(&mut self, pipeline: &mut A::Pipeline);
 
     unsafe fn add_fence(&self) -> RendererResult<A::Fence>;
     unsafe fn add_semaphore(&self) -> RendererResult<A::Semaphore>;
@@ -119,7 +117,7 @@ pub trait Renderer<A: Api>: Sized {
     ) -> RendererResult<A::SwapChain>;
     unsafe fn add_sampler(&self, desc: &SamplerDesc) -> RendererResult<A::Sampler>;
     unsafe fn add_render_target(&self, desc: &RenderTargetDesc) -> RendererResult<A::RenderTarget>;
-    unsafe fn add_texture(&self, desc: &TextureDesc) -> RendererResult<A::Texture>;
+    unsafe fn add_texture(&mut self, desc: &TextureDesc) -> RendererResult<A::Texture>;
     unsafe fn add_root_signature(
         &self,
         signature: &RootSignatureDesc<A>,
@@ -136,7 +134,7 @@ pub trait Renderer<A: Api>: Sized {
     unsafe fn get_common_info(&self) -> &GPUCommonInfo;
 
     // resource functions
-    unsafe fn add_buffer(&self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
+    unsafe fn add_buffer(&mut self, desc: &BufferDesc) -> RendererResult<A::Buffer>;
 }
 
 pub trait Command<A: Api>: Sized {
@@ -163,7 +161,7 @@ pub trait Command<A: Api>: Sized {
         instance_count: u32,
         first_instance: u32,
     );
-    unsafe fn cmd_draw_indexed(&self, index_count: u32, first_index: u32, first_vertex: i32);
+    unsafe fn cmd_draw_indexed(&mut self, index_count: u32, first_index: u32, first_vertex: i32);
     unsafe fn cmd_draw_indexed_instanced(
         &mut self,
         index_count: u32,
@@ -172,7 +170,7 @@ pub trait Command<A: Api>: Sized {
         first_instance: u32,
         first_vertex: i32,
     );
-    unsafe fn cmd_dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
+    unsafe fn cmd_dispatch(&mut self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
 
     // transition commands
     unsafe fn cmd_resource_barrier(&self);
@@ -180,8 +178,14 @@ pub trait Command<A: Api>: Sized {
     // virtual textures
     unsafe fn cmd_update_virtual_texture(&self);
 
-    unsafe fn update_buffer(&mut self, src_buffer: &A::Buffer, src_offset: u64, dest_buffer: &A::Buffer, dst_offset: u64, size: u64);
-
+    unsafe fn update_buffer(
+        &mut self,
+        src_buffer: &A::Buffer,
+        src_offset: u64,
+        dest_buffer: &A::Buffer,
+        dst_offset: u64,
+        size: u64,
+    );
 }
 
 pub trait RenderContext {
@@ -195,7 +199,7 @@ pub trait Shader {}
 pub trait Queue<A: Api> {
     unsafe fn submit(&mut self, desc: &mut QueueSubmitDesc<A>) -> RendererResult<()>;
     unsafe fn present(&self, desc: &mut QueuePresentDesc<A>) -> RendererResult<FenceStatus>;
-    unsafe fn wait_idle(&self);
+    unsafe fn wait_idle(&mut self);
     unsafe fn wait_fence(&self);
     unsafe fn toggle_v_sync(&self);
 }

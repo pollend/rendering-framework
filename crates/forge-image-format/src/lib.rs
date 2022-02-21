@@ -559,34 +559,34 @@ impl ImageFormat {
             ash::vk::Format::EAC_R11G11_SNORM_BLOCK => {
                 ImageFormat::ETC2_EAC_R11G11_SNORM
             }
-            ash::vk::Format::ASTC_4x4_UNORM_BLOCK => ImageFormat::ASTC_4x4_UNORM,
-            ash::vk::Format::ASTC_4x4_SRGB_BLOCK => ImageFormat::ASTC_4x4_SRGB,
-            ash::vk::Format::ASTC_5x4_UNORM_BLOCK => ImageFormat::ASTC_5x4_UNORM,
-            ash::vk::Format::ASTC_5x4_SRGB_BLOCK => ImageFormat::ASTC_5x4_SRGB,
-            ash::vk::Format::ASTC_5x5_UNORM_BLOCK => ImageFormat::ASTC_5x5_UNORM,
-            ash::vk::Format::ASTC_5x5_SRGB_BLOCK => ImageFormat::ASTC_5x5_SRGB,
-            ash::vk::Format::ASTC_6x5_UNORM_BLOCK => ImageFormat::ASTC_6x5_UNORM,
-            ash::vk::Format::ASTC_6x5_SRGB_BLOCK => ImageFormat::ASTC_6x5_SRGB,
-            ash::vk::Format::ASTC_6x6_UNORM_BLOCK => ImageFormat::ASTC_6x6_UNORM,
-            ash::vk::Format::ASTC_6x6_SRGB_BLOCK => ImageFormat::ASTC_6x6_SRGB,
-            ash::vk::Format::ASTC_8x5_UNORM_BLOCK => ImageFormat::ASTC_8x5_UNORM,
-            ash::vk::Format::ASTC_8x5_SRGB_BLOCK => ImageFormat::ASTC_8x5_SRGB,
-            ash::vk::Format::ASTC_8x6_UNORM_BLOCK => ImageFormat::ASTC_8x6_UNORM,
-            ash::vk::Format::ASTC_8x6_SRGB_BLOCK => ImageFormat::ASTC_8x6_SRGB,
-            ash::vk::Format::ASTC_8x8_UNORM_BLOCK => ImageFormat::ASTC_8x8_UNORM,
-            ash::vk::Format::ASTC_8x8_SRGB_BLOCK => ImageFormat::ASTC_8x8_SRGB,
-            ash::vk::Format::ASTC_10x5_UNORM_BLOCK => ImageFormat::ASTC_10x5_UNORM,
-            ash::vk::Format::ASTC_10x5_SRGB_BLOCK => ImageFormat::ASTC_10x5_SRGB,
-            ash::vk::Format::ASTC_10x6_UNORM_BLOCK => ImageFormat::ASTC_10x6_UNORM,
-            ash::vk::Format::ASTC_10x6_SRGB_BLOCK => ImageFormat::ASTC_10x6_SRGB,
-            ash::vk::Format::ASTC_10x8_UNORM_BLOCK => ImageFormat::ASTC_10x8_UNORM,
-            ash::vk::Format::ASTC_10x8_SRGB_BLOCK => ImageFormat::ASTC_10x8_SRGB,
-            ash::vk::Format::ASTC_10x10_UNORM_BLOCK => ImageFormat::ASTC_10x10_UNORM,
-            ash::vk::Format::ASTC_10x10_SRGB_BLOCK => ImageFormat::ASTC_10x10_SRGB,
-            ash::vk::Format::ASTC_12x10_UNORM_BLOCK => ImageFormat::ASTC_12x10_UNORM,
-            ash::vk::Format::ASTC_12x10_SRGB_BLOCK => ImageFormat::ASTC_12x10_SRGB,
-            ash::vk::Format::ASTC_12x12_UNORM_BLOCK => ImageFormat::ASTC_12x12_UNORM,
-            ash::vk::Format::ASTC_12x12_SRGB_BLOCK => ImageFormat::ASTC_12x12_SRGB,
+            ash::vk::Format::ASTC_4X4_UNORM_BLOCK => ImageFormat::ASTC_4x4_UNORM,
+            ash::vk::Format::ASTC_4X4_SRGB_BLOCK => ImageFormat::ASTC_4x4_SRGB,
+            ash::vk::Format::ASTC_5X4_UNORM_BLOCK => ImageFormat::ASTC_5x4_UNORM,
+            ash::vk::Format::ASTC_5X4_SRGB_BLOCK => ImageFormat::ASTC_5x4_SRGB,
+            ash::vk::Format::ASTC_5X5_UNORM_BLOCK => ImageFormat::ASTC_5x5_UNORM,
+            ash::vk::Format::ASTC_5X5_SRGB_BLOCK => ImageFormat::ASTC_5x5_SRGB,
+            ash::vk::Format::ASTC_6X5_UNORM_BLOCK => ImageFormat::ASTC_6x5_UNORM,
+            ash::vk::Format::ASTC_6X5_SRGB_BLOCK => ImageFormat::ASTC_6x5_SRGB,
+            ash::vk::Format::ASTC_6X6_UNORM_BLOCK => ImageFormat::ASTC_6x6_UNORM,
+            ash::vk::Format::ASTC_6X6_SRGB_BLOCK => ImageFormat::ASTC_6x6_SRGB,
+            ash::vk::Format::ASTC_8X5_UNORM_BLOCK => ImageFormat::ASTC_8x5_UNORM,
+            ash::vk::Format::ASTC_8X5_SRGB_BLOCK => ImageFormat::ASTC_8x5_SRGB,
+            ash::vk::Format::ASTC_8X6_UNORM_BLOCK => ImageFormat::ASTC_8x6_UNORM,
+            ash::vk::Format::ASTC_8X6_SRGB_BLOCK => ImageFormat::ASTC_8x6_SRGB,
+            ash::vk::Format::ASTC_8X8_UNORM_BLOCK => ImageFormat::ASTC_8x8_UNORM,
+            ash::vk::Format::ASTC_8X8_SRGB_BLOCK => ImageFormat::ASTC_8x8_SRGB,
+            ash::vk::Format::ASTC_10X5_UNORM_BLOCK => ImageFormat::ASTC_10x5_UNORM,
+            ash::vk::Format::ASTC_10X5_SRGB_BLOCK => ImageFormat::ASTC_10x5_SRGB,
+            ash::vk::Format::ASTC_10X6_UNORM_BLOCK => ImageFormat::ASTC_10x6_UNORM,
+            ash::vk::Format::ASTC_10X6_SRGB_BLOCK => ImageFormat::ASTC_10x6_SRGB,
+            ash::vk::Format::ASTC_10X8_UNORM_BLOCK => ImageFormat::ASTC_10x8_UNORM,
+            ash::vk::Format::ASTC_10X8_SRGB_BLOCK => ImageFormat::ASTC_10x8_SRGB,
+            ash::vk::Format::ASTC_10X10_UNORM_BLOCK => ImageFormat::ASTC_10x10_UNORM,
+            ash::vk::Format::ASTC_10X10_SRGB_BLOCK => ImageFormat::ASTC_10x10_SRGB,
+            ash::vk::Format::ASTC_12X10_UNORM_BLOCK => ImageFormat::ASTC_12x10_UNORM,
+            ash::vk::Format::ASTC_12X10_SRGB_BLOCK => ImageFormat::ASTC_12x10_SRGB,
+            ash::vk::Format::ASTC_12X12_UNORM_BLOCK => ImageFormat::ASTC_12x12_UNORM,
+            ash::vk::Format::ASTC_12X12_SRGB_BLOCK => ImageFormat::ASTC_12x12_SRGB,
             ash::vk::Format::PVRTC2_2BPP_UNORM_BLOCK_IMG => {
                 ImageFormat::PVRTC2_2BPP_UNORM
             }
@@ -876,7 +876,7 @@ impl ImageFormat {
                 ash::vk::ImageAspectFlags::DEPTH
             },
             // Stencil
-            ImageFormat::S8_UINT => ffi::vk::VkImageAspectFlagBits_VK_IMAGE_ASPECT_STENCIL_BIT,
+            ImageFormat::S8_UINT => ash::vk::ImageAspectFlags::STENCIL,
 
             ImageFormat::D16_UNORM_S8_UINT
             | ImageFormat::D24_UNORM_S8_UINT
@@ -885,7 +885,7 @@ impl ImageFormat {
                     | (if include_stencil_bit {
                     ash::vk::ImageAspectFlags::STENCIL
                 } else {
-                    0
+                    ash::vk::ImageAspectFlags::empty()
                 })
             },
             _ => ash::vk::ImageAspectFlags::COLOR,

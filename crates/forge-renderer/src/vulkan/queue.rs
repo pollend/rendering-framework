@@ -1,20 +1,21 @@
 use crate::{
     error::RendererError::VulkanError,
-    ffi,
-    vulkan::{VulkanFence, VulkanQueue, VulkanSemaphore},
+    vulkan::{VulkanFence, VulkanQueue, VulkanRenderer, VulkanSemaphore},
     FenceStatus, Queue, QueuePresentDesc, QueueSubmitDesc, RendererResult, VulkanAPI,
 };
-use std::{mem::MaybeUninit, ptr, sync::Mutex};
-use std::sync::Arc;
-use crate::vulkan::VulkanRenderer;
+use std::{
+    mem::MaybeUninit,
+    ops::Deref,
+    ptr,
+    sync::{Arc, Mutex},
+};
 
 impl Queue<VulkanAPI> for VulkanQueue {
     unsafe fn submit(&mut self, desc: &mut QueueSubmitDesc<VulkanAPI>) -> RendererResult<()> {
-
         match Arc::get_mut(&mut self.render) {
             None => {
                 assert!(false, "failed to correctly dispose of fence");
-            },
+            }
             Some(renderer) => {
                 let mut cmds_submit: Vec<ash::vk::CommandBuffer> =
                     (&desc.cmds).into_iter().map(|it| it.cmd_buf).collect();
@@ -60,17 +61,20 @@ impl Queue<VulkanAPI> for VulkanQueue {
                     .command_buffers(cmds_submit.as_slice())
                     .signal_semaphores(signaled_semaphore.as_slice());
                 let _guard = self.submission_mutex.lock().unwrap();
-                renderer.device.queue_submit(
-                    self.queue,
-                    &[*submit_info],
-                    match &mut desc.signal_fences {
-                        None => ash::vk::Fence::null(),
-                        Some(res) => {
-                            res.submitted = true;
-                            res.fence
-                        }
-                    },
-                ).unwrap();
+                renderer
+                    .device
+                    .queue_submit(
+                        self.queue,
+                        &[*submit_info],
+                        match &mut desc.signal_fences {
+                            None => ash::vk::Fence::null(),
+                            Some(res) => {
+                                res.submitted = true;
+                                res.fence
+                            }
+                        },
+                    )
+                    .unwrap();
                 // let result = ffi::vk::vkQueueSubmit(
                 //     self.queue,
                 //     1,
@@ -90,7 +94,6 @@ impl Queue<VulkanAPI> for VulkanQueue {
         }
 
         Ok(())
-
     }
 
     unsafe fn present(
@@ -101,8 +104,15 @@ impl Queue<VulkanAPI> for VulkanQueue {
         todo!()
     }
 
-    unsafe fn wait_idle(&self) {
-        ffi::vk::vkQueueWaitIdle(self.queue);
+    unsafe fn wait_idle(&mut self) {
+        match Arc::get_mut(&mut self.render) {
+            Some(renderer) => {
+                renderer.device.queue_wait_idle(self.queue);
+            }
+            None => {
+                assert!(false, "failed to correctly dispose of fence");
+            }
+        }
     }
 
     unsafe fn wait_fence(&self) {
